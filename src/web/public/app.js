@@ -639,6 +639,8 @@ class CodemanApp {
       { key: '=', altKey: '+', ctrl: true, action: () => this.increaseFontSize() },
       { key: '-', ctrl: true, action: () => this.decreaseFontSize() },
       { key: 'V', ctrl: true, shift: true, action: () => VoiceInput.toggle() },
+      { key: '{', ctrl: true, shift: true, action: () => this.moveActiveTabLeft() },
+      { key: '}', ctrl: true, shift: true, action: () => this.moveActiveTabRight() },
     ];
 
     // Use capture to handle before terminal
@@ -2104,6 +2106,24 @@ class CodemanApp {
         this._fullRenderSessionTabs();
       });
     });
+  }
+
+  moveActiveTabLeft() {
+    if (!this.activeSessionId) return;
+    const idx = this.sessionOrder.indexOf(this.activeSessionId);
+    if (idx <= 0) return;
+    [this.sessionOrder[idx - 1], this.sessionOrder[idx]] = [this.sessionOrder[idx], this.sessionOrder[idx - 1]];
+    this.saveSessionOrder();
+    this._fullRenderSessionTabs();
+  }
+
+  moveActiveTabRight() {
+    if (!this.activeSessionId) return;
+    const idx = this.sessionOrder.indexOf(this.activeSessionId);
+    if (idx === -1 || idx >= this.sessionOrder.length - 1) return;
+    [this.sessionOrder[idx], this.sessionOrder[idx + 1]] = [this.sessionOrder[idx + 1], this.sessionOrder[idx]];
+    this.saveSessionOrder();
+    this._fullRenderSessionTabs();
   }
 
   // ═══════════════════════════════════════════════════════════════
