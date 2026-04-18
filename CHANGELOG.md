@@ -1,5 +1,13 @@
 # aicodeman
 
+## 0.5.13
+
+### Patch Changes
+
+- Fix "Case path not found" error in Quick Start when `~/codeman-cases/` does not exist (issue #64). Two bugs in `session-ui.js`:
+  - `runClaude()` auto-create read `createCaseData.case`, but `POST /api/cases` returns `{ success, data: { case } }` — corrected to `createCaseData.data.case`.
+  - `runShell()` had no auto-create logic and would immediately throw on a missing case directory — now mirrors `runClaude()`'s create-on-demand flow.
+
 ## 0.5.12
 
 ### Patch Changes
