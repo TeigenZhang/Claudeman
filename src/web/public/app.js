@@ -936,7 +936,12 @@ class CodemanApp {
   _renderMarkdown(text) {
     if (typeof marked !== 'undefined' && marked.parse) {
       try {
-        return this._sanitizeHtml(marked.parse(text, { breaks: true, gfm: true }));
+        const prepared = this._preprocessAsciiArt(src);
+        const html = marked.parse(prepared, { breaks: true, gfm: true });
+        // Wrap tables in a horizontal-scroll container so they overflow gracefully
+        // on mobile without collapsing into block-level cells.
+        return html.replace(/<table>/g, '<div class="rv-table-wrap"><table>')
+                   .replace(/<\/table>/g, '</table></div>');
       } catch { /* fall through */ }
     }
     // Fallback: escape HTML and preserve whitespace
@@ -1020,11 +1025,12 @@ class CodemanApp {
       body.innerHTML = '';
       for (const msg of messages) {
         const div = document.createElement('div');
-        div.className = 'rv-message';
+        const isUser = msg.role === 'user';
+        div.className = 'rv-message ' + (isUser ? 'rv-msg-user' : 'rv-msg-assistant');
 
         const role = document.createElement('div');
-        role.className = 'rv-role ' + (msg.role === 'user' ? 'rv-role-user' : 'rv-role-assistant');
-        role.textContent = msg.role === 'user' ? 'You' : 'Claude';
+        role.className = 'rv-role ' + (isUser ? 'rv-role-user' : 'rv-role-assistant');
+        role.textContent = isUser ? 'You' : 'Claude';
         div.appendChild(role);
 
         const text = document.createElement('div');

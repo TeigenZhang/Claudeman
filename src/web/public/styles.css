@@ -7885,33 +7885,54 @@ kbd {
   line-height: 1;
 }
 
-/* Conversation thread messages */
+/* Conversation thread messages — card-style layout for clear separation */
 .rv-message {
-  margin-bottom: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #2a2a3a;
+  margin: 0 0 18px;
+  padding: 14px 16px 16px;
+  border-radius: 10px;
+  border: 1px solid #252538;
+  border-left-width: 3px;
+  background: #181826;
+  position: relative;
 }
 
 .rv-message:last-child {
-  border-bottom: none;
-  margin-bottom: 0;
-  padding-bottom: 0;
-}
-
-.rv-role {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
   margin-bottom: 6px;
 }
 
+/* Distinct accent per role so threads are scannable at a glance */
+.rv-message:has(.rv-role-user),
+.rv-message.rv-msg-user {
+  border-left-color: #7aa2ff;
+  background: #16182a;
+}
+
+.rv-message:has(.rv-role-assistant),
+.rv-message.rv-msg-assistant {
+  border-left-color: #6ddb7f;
+  background: #161f1a;
+}
+
+.rv-role {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .rv-role-user {
-  color: #5c7cfa;
+  color: #7aa2ff;
+  background: rgba(122, 162, 255, 0.12);
 }
 
 .rv-role-assistant {
-  color: #51cf66;
+  color: #6ddb7f;
+  background: rgba(109, 219, 127, 0.12);
 }
 
 /* Markdown rendered content inside response viewer */
@@ -7986,25 +8007,80 @@ kbd {
   text-decoration: none;
 }
 
-.rv-text table {
+.rv-text a:hover,
+.response-viewer-body a:hover {
+  border-bottom-color: #7aa2ff;
+}
+
+/* Tables — scroll wrapper keeps table proper while allowing horizontal overflow */
+.rv-table-wrap {
+  margin: 1em 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid #2a2a3d;
+  border-radius: 8px;
+  background: #12121d;
+}
+
+.rv-text table,
+.response-viewer-body > table,
+.rv-table-wrap > table {
   border-collapse: collapse;
-  margin: 0.6em 0;
+  margin: 0;
   width: 100%;
-  font-size: 0.9em;
+  font-size: 0.92em;
+  line-height: 1.55;
 }
 
-.rv-text th, .rv-text td {
-  border: 1px solid #333;
-  padding: 4px 8px;
+.rv-text th, .rv-text td,
+.response-viewer-body > table th,
+.response-viewer-body > table td,
+.rv-table-wrap th, .rv-table-wrap td {
+  border-bottom: 1px solid #252538;
+  border-right: 1px solid #252538;
+  padding: 8px 12px;
   text-align: left;
+  vertical-align: top;
+  white-space: normal;
 }
 
-.rv-text th {
-  background: #2a2a3e;
-  color: #e0e0e0;
+.rv-text th:last-child, .rv-text td:last-child,
+.response-viewer-body > table th:last-child,
+.response-viewer-body > table td:last-child,
+.rv-table-wrap th:last-child, .rv-table-wrap td:last-child {
+  border-right: none;
 }
 
-.rv-text hr {
+.rv-text tr:last-child td,
+.response-viewer-body > table tr:last-child td,
+.rv-table-wrap tr:last-child td {
+  border-bottom: none;
+}
+
+.rv-text th,
+.response-viewer-body > table th,
+.rv-table-wrap th {
+  background: #20202e;
+  color: #f0f0f5;
+  font-weight: 600;
+  border-bottom: 2px solid #2f2f45;
+  white-space: nowrap;
+}
+
+.rv-text tbody tr:nth-child(even) td,
+.response-viewer-body > table tbody tr:nth-child(even) td,
+.rv-table-wrap tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.022);
+}
+
+.rv-text tbody tr:hover td,
+.response-viewer-body > table tbody tr:hover td,
+.rv-table-wrap tbody tr:hover td {
+  background: rgba(122, 162, 255, 0.06);
+}
+
+.rv-text hr,
+.response-viewer-body > hr {
   border: none;
   border-top: 1px solid #333;
   margin: 1em 0;
