@@ -1001,13 +1001,21 @@ class CodemanApp {
                    .replace(/<\/table>/g, '</table></div>');
         // Tag code blocks containing box-drawing/arrow glyphs as diagrams so CSS
         // preserves their whitespace (horizontal scroll); other code blocks wrap
-        // for mobile readability.
+        // for mobile readability. Inject a toggle button so users can override
+        // when they'd rather see the content wrapped than scroll horizontally.
         const DIAGRAM_CHAR = /[←-⇿─-╿▀-▟■-◿]/;
         const tmpl = document.createElement('template');
         tmpl.innerHTML = html;
         tmpl.content.querySelectorAll('pre > code').forEach((code) => {
           if (DIAGRAM_CHAR.test(code.textContent || '')) {
-            code.parentElement.classList.add('rv-diagram');
+            const pre = code.parentElement;
+            pre.classList.add('rv-diagram');
+            const btn = document.createElement('button');
+            btn.className = 'rv-wrap-toggle';
+            btn.type = 'button';
+            btn.setAttribute('aria-label', 'Toggle line wrapping');
+            btn.setAttribute('title', 'Toggle line wrapping');
+            pre.insertBefore(btn, pre.firstChild);
           }
         });
         return tmpl.innerHTML;
@@ -1016,6 +1024,24 @@ class CodemanApp {
     // Fallback: escape HTML and preserve whitespace
     const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return `<pre style="white-space:pre-wrap;word-break:break-word">${escaped}</pre>`;
+  }
+
+  /**
+   * Bind click handlers inside the response viewer body. Uses event delegation
+   * so a single listener serves every diagram-toggle button, including those
+   * added when the conversation is reloaded. Idempotent via a dataset flag.
+   */
+  _bindResponseViewerInteractions(body) {
+    if (!body || body.dataset.rvBound === '1') return;
+    body.dataset.rvBound = '1';
+    body.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('.rv-wrap-toggle');
+      if (!btn) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const pre = btn.closest('pre.rv-diagram');
+      if (pre) pre.classList.toggle('rv-wrap-on');
+    });
   }
 
   async toggleResponseViewer() {
@@ -1048,6 +1074,7 @@ class CodemanApp {
 
       const body = document.getElementById('responseViewerBody');
       body.innerHTML = this._renderMarkdown(lastResponse);
+      this._bindResponseViewerInteractions(body);
 
       // Reset state for fresh open
       const title = document.getElementById('responseViewerTitle');
@@ -1099,6 +1126,7 @@ class CodemanApp {
 
         body.appendChild(div);
       }
+      this._bindResponseViewerInteractions(body);
 
       if (title) title.textContent = `Conversation (${messages.length} messages)`;
       if (moreBtn) moreBtn.style.display = 'none';
