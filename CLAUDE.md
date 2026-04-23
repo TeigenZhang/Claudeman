@@ -81,7 +81,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 | Production start | `npm run start` |
 | Production logs | `journalctl --user -u codeman-web -f` |
 
-**CI**: `.github/workflows/ci.yml` runs `typecheck`, `lint`, `format:check` on push to master/main and on PRs (Node 22). Tests excluded (they spawn tmux).
+**CI**: `.github/workflows/ci.yml` runs `check:lockfile`, `typecheck`, `lint`, `format:check` on push to master/main and on PRs (Node 22). Tests excluded (they spawn tmux).
 
 **Code style**: Prettier (`singleQuote: true`, `printWidth: 120`, `trailingComma: "es5"`). ESLint flat config (`config/eslint.config.js`) allows `no-console`, warns on `@typescript-eslint/no-explicit-any`. Ignores: `app.js`, `scripts/**/*.mjs`, `src/web/public/vendor/**`, `scripts/remotion/**`.
 
@@ -113,8 +113,8 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 | **Infra** | `src/hooks-config.ts`, `src/push-store.ts`, `src/tunnel-manager.ts`, `src/image-watcher.ts`, `src/file-stream-manager.ts` | |
 | **Plan** | `src/plan-orchestrator.ts`, `src/prompts/*.ts`, `src/templates/claude-md.ts` | |
 | **Web** | `src/web/server.ts`, `src/web/sse-events.ts`, `src/web/routes/*.ts` (15 route modules + barrel), `src/web/route-helpers.ts`, `src/web/ports/*.ts`, `src/web/middleware/auth.ts`, `src/web/schemas.ts` | |
-| **Frontend** | `src/web/public/app.js` (~2.8K lines, core) + 5 infra modules (`constants.js`, `mobile-handlers.js`, `voice-input.js`, `notification-manager.js`, `keyboard-accessory.js`) + 7 domain modules (`terminal-ui.js`, `respawn-ui.js`, `ralph-panel.js`, `orchestrator-panel.js`, `settings-ui.js`, `panels-ui.js`, `session-ui.js`) + 4 feature modules (`ralph-wizard.js`, `api-client.js`, `subagent-windows.js`, `input-cjk.js`) + `sw.js` | |
-| **Types** | `src/types/index.ts` → 15 domain files | See `@fileoverview` in index.ts |
+| **Frontend** | `src/web/public/app.js` (~2.9K lines, core) + 5 infra modules (`constants.js`, `mobile-handlers.js`, `voice-input.js`, `notification-manager.js`, `keyboard-accessory.js`) + 7 domain modules (`terminal-ui.js`, `respawn-ui.js`, `ralph-panel.js`, `orchestrator-panel.js`, `settings-ui.js`, `panels-ui.js`, `session-ui.js`) + 4 feature modules (`ralph-wizard.js`, `api-client.js`, `subagent-windows.js`, `input-cjk.js`) + `sw.js` | |
+| **Types** | `src/types/index.ts` (barrel) → 14 domain files; also `src/types.ts` root re-export | See `@fileoverview` in index.ts |
 
 ★ = Large file (>50KB). All files have `@fileoverview` JSDoc — read that before diving in. Discovery aid: `grep -l '@fileoverview' src/web/routes/*.ts` lists all route modules; same grep works for `src/types/`, `src/web/public/*.js`.
 
@@ -174,7 +174,7 @@ Frontend JS modules have `@fileoverview` with `@dependency`/`@loadorder` tags. L
 
 ### API Routes
 
-~125 handlers across 15 route files in `src/web/routes/`: system (36), sessions (25), orchestrator (10), ralph (9), plan (8), respawn (7), cases (7), files (5), mux (5), scheduled (4), push (4), teams (2), hooks (1), clipboard (1), ws (1 WebSocket). Each file has `@fileoverview` with endpoint details.
+~128 handlers across 15 route files in `src/web/routes/`: system (36), sessions (27), orchestrator (10), cases (9), ralph (9), plan (8), respawn (7), files (5), mux (5), push (4), scheduled (4), teams (2), hooks (1), clipboard (1), ws (1 WebSocket). Each file has `@fileoverview` with endpoint details.
 
 ## Adding Features
 
