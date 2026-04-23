@@ -962,8 +962,15 @@ class CodemanApp {
    * step, HTML collapses the whitespace and the diagram becomes unreadable prose.
    */
   _preprocessAsciiArt(text) {
-    // Box-drawing + arrows + block elements + geometric shapes
-    const BOX_PATTERN = /[←-⇿─-╿▀-▟■-◿]/;
+    // Only trigger on characters that rarely appear in prose:
+    //   U+2500-U+257F  Box Drawing      (─│┌┐└┘├┤┬┴┼╔╗╚╝═║)
+    //   U+2580-U+259F  Block Elements   (▀▄█▌▐░▒▓, progress bars)
+    // Deliberately excluded:
+    //   U+2190-U+21FF  Arrows           (→←↑↓⇒ — common rhetorical prose)
+    //   U+25A0-U+25FF  Geometric Shapes (●○■□◆◇ — common bullets)
+    // Triggering on those would wrap numbered lists / prose that merely uses
+    // arrows in code blocks and break their markdown rendering.
+    const BOX_PATTERN = /[─-╿▀-▟]/;
 
     // Preserve existing fenced code blocks as-is (hide them behind placeholders)
     const fenceRe = /```[\s\S]*?```/g;
@@ -999,12 +1006,14 @@ class CodemanApp {
         // on mobile without collapsing into block-level cells.
         html = html.replace(/<table>/g, '<div class="rv-table-wrap"><table>')
                    .replace(/<\/table>/g, '</table></div>');
-        // Tag code blocks containing box-drawing/arrow glyphs as diagrams.
+        // Tag code blocks containing box-drawing glyphs as diagrams (same
+        // narrow trigger as _preprocessAsciiArt — arrows/geometric shapes
+        // don't count because they appear frequently in prose).
         // Default is wrap (readable on mobile); a toggle button lets the user
         // switch to horizontal-scroll mode when the original structure matters.
         // The button must live OUTSIDE the <pre> scroll container so it stays
         // pinned to the visual right edge when the user scrolls horizontally.
-        const DIAGRAM_CHAR = /[←-⇿─-╿▀-▟■-◿]/;
+        const DIAGRAM_CHAR = /[─-╿▀-▟]/;
         const tmpl = document.createElement('template');
         tmpl.innerHTML = html;
         tmpl.content.querySelectorAll('pre > code').forEach((code) => {
