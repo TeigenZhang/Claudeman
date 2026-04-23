@@ -114,7 +114,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 | **Plan** | `src/plan-orchestrator.ts`, `src/prompts/*.ts`, `src/templates/claude-md.ts` | |
 | **Web** | `src/web/server.ts`, `src/web/sse-events.ts`, `src/web/routes/*.ts` (15 route modules + barrel), `src/web/route-helpers.ts`, `src/web/ports/*.ts`, `src/web/middleware/auth.ts`, `src/web/schemas.ts` | |
 | **Frontend** | `src/web/public/app.js` (~2.8K lines, core) + 5 infra modules (`constants.js`, `mobile-handlers.js`, `voice-input.js`, `notification-manager.js`, `keyboard-accessory.js`) + 7 domain modules (`terminal-ui.js`, `respawn-ui.js`, `ralph-panel.js`, `orchestrator-panel.js`, `settings-ui.js`, `panels-ui.js`, `session-ui.js`) + 4 feature modules (`ralph-wizard.js`, `api-client.js`, `subagent-windows.js`, `input-cjk.js`) + `sw.js` | |
-| **Types** | `src/types/index.ts` → 14 domain files | See `@fileoverview` in index.ts |
+| **Types** | `src/types/index.ts` → 15 domain files | See `@fileoverview` in index.ts |
 
 ★ = Large file (>50KB). All files have `@fileoverview` JSDoc — read that before diving in. Discovery aid: `grep -l '@fileoverview' src/web/routes/*.ts` lists all route modules; same grep works for `src/types/`, `src/web/public/*.js`.
 
@@ -170,7 +170,7 @@ Frontend JS modules have `@fileoverview` with `@dependency`/`@loadorder` tags. L
 
 ### SSE Event Registry
 
-~118 event types in `src/web/sse-events.ts` (backend) and `SSE_EVENTS` in `constants.js` (frontend). Both must be kept in sync.
+~120 event types in `src/web/sse-events.ts` (backend) and `SSE_EVENTS` in `constants.js` (frontend). Both must be kept in sync.
 
 ### API Routes
 
@@ -211,10 +211,6 @@ Raw `npx vitest` skips `config/vitest.config.ts`; always use `npm test --` or pa
 
 **Respawn tests**: Use `MockSession` from `test/respawn-test-utils.ts`. **Route tests**: `app.inject()` in `test/routes/`. **Mobile tests**: Playwright suite in `test/mobile/` (135 device profiles).
 
-## Screenshots
-
-Mobile screenshots in `~/.codeman/screenshots/`. API: `GET /api/screenshots`, `POST /api/screenshots`.
-
 ## Debugging
 
 ```bash
@@ -225,27 +221,14 @@ curl localhost:3000/api/subagents | jq             # Background agents
 cat ~/.codeman/state.json | jq                     # Persisted state
 ```
 
+Mobile screenshots: `~/.codeman/screenshots/`, accessed via `GET/POST /api/screenshots`.
+
 ## Performance & Limits
 
 Target: 20 sessions, 50 agent windows at 60fps. Limits in `src/config/`: terminal 2MB, text 1MB, messages 1000, max agents 500, max sessions 50, max SSE clients 100. Use `LRUMap` for bounded caches, `StaleExpirationMap` for TTL cleanup. Anti-flicker pipeline: `docs/terminal-anti-flicker.md`.
 
-## References
+**Memory leaks (24+ hour sessions)**: use `CleanupManager`, clear Maps in `stop()`, guard async with `if (this.cleanup.isStopped) return`. Frontend: store handler refs, clean in `close*()`. Verify: `npm test -- test/memory-leak-prevention.test.ts`.
 
-Deep-dive docs in `docs/`: `respawn-state-machine.md`, `ralph-wiggum-guide.md`, `claude-code-hooks-reference.md`, `terminal-anti-flicker.md`, `opencode-integration.md`, `qr-auth-plan.md`, `orchestrator-loop-architecture.md`, `browser-testing-guide.md`. Agent Teams: `docs/agent-teams/README.md`. SSE events: `src/web/sse-events.ts` + `constants.js`.
+## Scripts & Tunnel
 
-## Scripts
-
-Key: `scripts/tmux-manager.sh` (safe tmux mgmt), `scripts/tunnel.sh` (tunnel start/stop/url). Production: `scripts/codeman-web.service`, `scripts/codeman-tunnel.service`.
-
-## Memory Leak Prevention
-
-24+ hour sessions: use `CleanupManager`, clear Maps in `stop()`, guard async with `if (this.cleanup.isStopped) return`. Frontend: store handler refs, clean in `close*()`. Verify: `npm test -- test/memory-leak-prevention.test.ts`.
-
-## Common Workflows
-
-**Bug investigation**: Dev server → reproduce in browser → check terminal + `~/.codeman/state.json`.
-**Respawn changes**: Read `docs/respawn-state-machine.md` first. Use `MockSession` from `test/respawn-test-utils.ts`.
-
-## Tunnel
-
-`./scripts/tunnel.sh start|stop|url`. **Always set `CODEMAN_PASSWORD`** before exposing via tunnel.
+Key scripts: `scripts/tmux-manager.sh` (safe tmux mgmt), `scripts/tunnel.sh start|stop|url` (tunnel). Production services: `scripts/codeman-web.service`, `scripts/codeman-tunnel.service`. **Always set `CODEMAN_PASSWORD`** before exposing via tunnel.
