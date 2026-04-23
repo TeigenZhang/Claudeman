@@ -444,7 +444,6 @@ Object.assign(CodemanApp.prototype, {
             if (
               activeResizeSession &&
               activeResizeSession.mode !== 'shell' &&
-              !activeResizeSession._ended &&
               this.terminal &&
               this.isTerminalAtBottom()
             ) {
