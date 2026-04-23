@@ -999,24 +999,31 @@ class CodemanApp {
         // on mobile without collapsing into block-level cells.
         html = html.replace(/<table>/g, '<div class="rv-table-wrap"><table>')
                    .replace(/<\/table>/g, '</table></div>');
-        // Tag code blocks containing box-drawing/arrow glyphs as diagrams so CSS
-        // preserves their whitespace (horizontal scroll); other code blocks wrap
-        // for mobile readability. Inject a toggle button so users can override
-        // when they'd rather see the content wrapped than scroll horizontally.
+        // Tag code blocks containing box-drawing/arrow glyphs as diagrams.
+        // Default is wrap (readable on mobile); a toggle button lets the user
+        // switch to horizontal-scroll mode when the original structure matters.
+        // The button must live OUTSIDE the <pre> scroll container so it stays
+        // pinned to the visual right edge when the user scrolls horizontally.
         const DIAGRAM_CHAR = /[←-⇿─-╿▀-▟■-◿]/;
         const tmpl = document.createElement('template');
         tmpl.innerHTML = html;
         tmpl.content.querySelectorAll('pre > code').forEach((code) => {
-          if (DIAGRAM_CHAR.test(code.textContent || '')) {
-            const pre = code.parentElement;
-            pre.classList.add('rv-diagram');
-            const btn = document.createElement('button');
-            btn.className = 'rv-wrap-toggle';
-            btn.type = 'button';
-            btn.setAttribute('aria-label', 'Toggle line wrapping');
-            btn.setAttribute('title', 'Toggle line wrapping');
-            pre.insertBefore(btn, pre.firstChild);
-          }
+          if (!DIAGRAM_CHAR.test(code.textContent || '')) return;
+          const pre = code.parentElement;
+          pre.classList.add('rv-diagram');
+
+          const wrap = document.createElement('div');
+          wrap.className = 'rv-diagram-wrap';
+
+          const btn = document.createElement('button');
+          btn.className = 'rv-wrap-toggle';
+          btn.type = 'button';
+          btn.setAttribute('aria-label', 'Toggle line wrapping');
+          btn.setAttribute('title', 'Toggle line wrapping');
+
+          pre.parentNode.insertBefore(wrap, pre);
+          wrap.appendChild(btn);
+          wrap.appendChild(pre);
         });
         return tmpl.innerHTML;
       } catch { /* fall through */ }
@@ -1039,8 +1046,11 @@ class CodemanApp {
       if (!btn) return;
       ev.preventDefault();
       ev.stopPropagation();
-      const pre = btn.closest('pre.rv-diagram');
-      if (pre) pre.classList.toggle('rv-wrap-on');
+      const wrap = btn.closest('.rv-diagram-wrap');
+      const pre = wrap?.querySelector('pre.rv-diagram');
+      if (!pre || !wrap) return;
+      const nowrap = pre.classList.toggle('rv-nowrap');
+      wrap.classList.toggle('rv-wrap-nowrap', nowrap);
     });
   }
 

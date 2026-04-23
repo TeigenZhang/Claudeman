@@ -7995,27 +7995,53 @@ kbd {
   tab-size: 4;
 }
 
-/* ASCII diagrams (box-drawing, arrows) stay rigid by default — wrapping destroys
-   structure. Horizontal scroll + gradient hint on the right edge signals
-   "more to the right". A toggle button lets users override when wrapping
-   is more readable than structure preservation. */
-.rv-text pre.rv-diagram,
-.response-viewer-body > pre.rv-diagram {
-  padding-right: 44px;
+/* ASCII diagrams (box-drawing, arrows): default is wrap for mobile readability.
+   A toggle button lets users switch to horizontal-scroll mode when preserving
+   the original grid structure matters more than fitting the viewport. The
+   button lives in a wrapper div outside the <pre> so it stays pinned to the
+   visual right edge when the user scrolls horizontally. */
+.rv-text .rv-diagram-wrap,
+.response-viewer-body .rv-diagram-wrap {
+  position: relative;
+  margin: 1em 0;
+  max-width: var(--rv-content-max, 720px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.rv-text .rv-diagram-wrap > pre.rv-diagram,
+.response-viewer-body .rv-diagram-wrap > pre.rv-diagram {
+  /* Pre lives inside wrap — move outer spacing to wrap */
+  margin: 0;
+  padding-right: 44px;    /* reserve space for the pinned button */
+}
+
+/* Default state: wrap long lines — same behavior as regular code blocks */
+.rv-text pre.rv-diagram code,
+.response-viewer-body pre.rv-diagram code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+/* Scroll-mode (toggled): preserve structure, horizontal scroll with gradient hint */
+.rv-text pre.rv-diagram.rv-nowrap code,
+.response-viewer-body pre.rv-diagram.rv-nowrap code {
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.rv-text pre.rv-diagram.rv-nowrap,
+.response-viewer-body pre.rv-diagram.rv-nowrap {
   background:
     linear-gradient(to left, #0f0f1a 0, rgba(15, 15, 26, 0) 28px) right / 28px 100% no-repeat,
     linear-gradient(to left, rgba(122, 162, 255, 0.18) 0, rgba(15, 15, 26, 0) 28px) right / 28px 100% no-repeat,
     #0f0f1a;
 }
 
-.rv-text pre.rv-diagram code,
-.response-viewer-body > pre.rv-diagram code {
-  white-space: pre;
-  overflow-wrap: normal;
-  word-break: normal;
-}
-
-/* Toggle button (absolute-positioned in top-right of diagram pre) */
+/* Toggle button — pinned to the wrapper's top-right, NOT affected by <pre>'s
+   horizontal scroll since it lives outside that scrolling container. */
 .rv-wrap-toggle {
   position: absolute;
   top: 6px;
@@ -8034,7 +8060,7 @@ kbd {
   align-items: center;
   justify-content: center;
   transition: color 0.15s, border-color 0.15s;
-  z-index: 1;
+  z-index: 2;
 }
 
 .rv-wrap-toggle:hover,
@@ -8043,26 +8069,15 @@ kbd {
   border-color: #4a4a65;
 }
 
+/* Default icon = "return" (wrap is active). Clicking switches to expand/scroll. */
 .rv-wrap-toggle::before {
-  content: '⤢';         /* "expand" glyph — horizontal scroll mode (default) */
+  content: '↵';
   font-size: 13px;
 }
 
-/* Wrap-enabled diagram: switch whitespace handling + swap button icon */
-.rv-text pre.rv-diagram.rv-wrap-on code,
-.response-viewer-body > pre.rv-diagram.rv-wrap-on code {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.rv-text pre.rv-diagram.rv-wrap-on,
-.response-viewer-body > pre.rv-diagram.rv-wrap-on {
-  /* No need for right-edge scroll hint when wrapping is on */
-  background: #0f0f1a;
-}
-
-.rv-diagram.rv-wrap-on .rv-wrap-toggle::before {
-  content: '↵';          /* "return" glyph — wrap mode is active */
+.rv-diagram-wrap:has(> pre.rv-nowrap) .rv-wrap-toggle::before,
+.rv-diagram-wrap.rv-wrap-nowrap .rv-wrap-toggle::before {
+  content: '⤢';
 }
 
 .rv-text ul, .rv-text ol,
