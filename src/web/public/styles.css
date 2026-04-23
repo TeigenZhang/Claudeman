@@ -7817,9 +7817,8 @@ kbd {
    Response Viewer — native-scroll overlay for reading Claude responses
    ═══════════════════════════════════════════════════════════════ */
 
-/* Hidden on desktop — only shown on mobile via mobile.css override */
 .btn-response-viewer-header {
-  display: none !important;
+  display: inline-flex !important;
 }
 
 .response-viewer {
