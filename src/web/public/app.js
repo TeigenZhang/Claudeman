@@ -994,11 +994,23 @@ class CodemanApp {
     if (typeof marked !== 'undefined' && marked.parse) {
       try {
         const prepared = this._preprocessAsciiArt(src);
-        const html = marked.parse(prepared, { breaks: true, gfm: true });
+        let html = marked.parse(prepared, { breaks: true, gfm: true });
         // Wrap tables in a horizontal-scroll container so they overflow gracefully
         // on mobile without collapsing into block-level cells.
-        return html.replace(/<table>/g, '<div class="rv-table-wrap"><table>')
+        html = html.replace(/<table>/g, '<div class="rv-table-wrap"><table>')
                    .replace(/<\/table>/g, '</table></div>');
+        // Tag code blocks containing box-drawing/arrow glyphs as diagrams so CSS
+        // preserves their whitespace (horizontal scroll); other code blocks wrap
+        // for mobile readability.
+        const DIAGRAM_CHAR = /[←-⇿─-╿▀-▟■-◿]/;
+        const tmpl = document.createElement('template');
+        tmpl.innerHTML = html;
+        tmpl.content.querySelectorAll('pre > code').forEach((code) => {
+          if (DIAGRAM_CHAR.test(code.textContent || '')) {
+            code.parentElement.classList.add('rv-diagram');
+          }
+        });
+        return tmpl.innerHTML;
       } catch { /* fall through */ }
     }
     // Fallback: escape HTML and preserve whitespace
