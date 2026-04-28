@@ -595,15 +595,99 @@ export function registerSessionRoutes(
 
   // ========== Get Last Response (from transcript JSONL) ==========
 
+  // Resolves the most recent Claude conversation id for a session's cwd by
+  // tailing ~/.claude/history.jsonl. After `/clear`, Claude Code keeps writing
+  // to a new <uuid>.jsonl; history.jsonl is the only source-of-truth update
+  // that does not rely on project-local hooks (we intentionally don't install
+  // hooks in arbitrary user repos, see the POST /api/sessions comment).
+  //
+  // Entries from OTHER Codeman sessions in the same cwd are filtered out by
+  // their known claudeSessionIds so concurrent tabs don't shadow each other,
+  // as long as each has had its id resolved at least once.
+  async function resolveActiveClaudeSessionIdFromHistory(
+    session: Session,
+    projectsDir: string
+  ): Promise<string | null> {
+    const historyPath = join(homedir(), '.claude', 'history.jsonl');
+    const otherClaudeIds = new Set<string>();
+    for (const s of ctx.sessions.values()) {
+      if (s.id !== session.id && s.workingDir === session.workingDir && s.claudeSessionId) {
+        otherClaudeIds.add(s.claudeSessionId);
+      }
+    }
+
+    let candidateSid: string | null = null;
+    try {
+      const content = await fs.readFile(historyPath, 'utf8');
+      const lines = content.split('\n');
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i];
+        if (!line) continue;
+        try {
+          const entry = JSON.parse(line) as { project?: string; sessionId?: string };
+          if (
+            entry.project === session.workingDir &&
+            typeof entry.sessionId === 'string' &&
+            !otherClaudeIds.has(entry.sessionId)
+          ) {
+            candidateSid = entry.sessionId;
+            break;
+          }
+        } catch {
+          // Skip unparseable lines
+        }
+      }
+    } catch {
+      return null;
+    }
+    if (!candidateSid || candidateSid === session.id) return candidateSid;
+
+    // Safety: only adopt if the candidate's jsonl is more recently written
+    // than our initial conversation's jsonl. Blocks stale ids inherited from
+    // a prior Codeman session that happened to share this cwd.
+    try {
+      const projectDirs = await fs.readdir(projectsDir);
+      let candidateMtime = 0;
+      let initialMtime = 0;
+      for (const projDir of projectDirs) {
+        try {
+          const cs = await fs.stat(join(projectsDir, projDir, `${candidateSid}.jsonl`));
+          if (cs.mtimeMs > candidateMtime) candidateMtime = cs.mtimeMs;
+        } catch {
+          /* not in this dir */
+        }
+        try {
+          const is = await fs.stat(join(projectsDir, projDir, `${session.id}.jsonl`));
+          if (is.mtimeMs > initialMtime) initialMtime = is.mtimeMs;
+        } catch {
+          /* not in this dir */
+        }
+      }
+      if (candidateMtime === 0) return null;
+      if (initialMtime > 0 && candidateMtime <= initialMtime) return null;
+    } catch {
+      return null;
+    }
+    return candidateSid;
+  }
+
   app.get('/api/sessions/:id/last-response', async (req) => {
     const { id } = req.params as { id: string };
     const session = findSessionOrFail(ctx, id);
 
-    // The Claude conversation ID (used as JSONL filename)
-    const claudeSessionId = session.claudeSessionId || session.id;
-
     // Scan ~/.claude/projects/*/ for the transcript file
     const projectsDir = join(process.env.HOME || '/tmp', '.claude', 'projects');
+
+    // Adopt the current conversation id if the user ran `/clear` — Claude CLI's
+    // interactive PTY emits no JSON on stdout, so without this lookup the
+    // stored id stays pinned to the pre-/clear transcript.
+    const activeId = await resolveActiveClaudeSessionIdFromHistory(session, projectsDir);
+    if (activeId && activeId !== session.claudeSessionId) {
+      session.adoptClaudeSessionId(activeId);
+    }
+
+    // The Claude conversation ID (used as JSONL filename)
+    const claudeSessionId = session.claudeSessionId || session.id;
     let transcriptText = '';
     let transcriptTimestamp = '';
 

@@ -484,6 +484,15 @@ export class Session extends EventEmitter {
     return this._claudeSessionId;
   }
 
+  // Adopt a Claude conversation ID observed from an external source (e.g. hook
+  // payload). In interactive PTY mode Claude CLI emits no JSON to stdout, so
+  // `_handleJsonMessage` never sees `session_id`; hooks are the only signal
+  // that conveys a post-/clear conversation switch.
+  adoptClaudeSessionId(newId: string): void {
+    if (!newId || newId === this._claudeSessionId) return;
+    this._claudeSessionId = newId;
+  }
+
   /** The tmux session name, if the session is running inside a mux */
   get muxName(): string | null {
     return this._muxSession?.muxName ?? null;
