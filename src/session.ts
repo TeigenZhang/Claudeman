@@ -1614,11 +1614,14 @@ export class Session extends EventEmitter {
         this._messages = this._messages.slice(-Math.floor(MAX_MESSAGES * 0.8));
       }
 
-      // Extract Claude session ID from messages (can be in any message type)
-      // Support both sessionId (camelCase) and session_id (snake_case)
+      // Extract Claude session ID from messages (can be in any message type).
+      // Support both sessionId (camelCase) and session_id (snake_case).
+      // The constructor seeds _claudeSessionId with this.id as a placeholder;
+      // once Claude CLI emits its real session ID, adopt it so JSONL lookups
+      // (e.g. /api/sessions/:id/last-response) can find the transcript file.
       const msgSessionId =
         ((msg as unknown as Record<string, unknown>).sessionId as string | undefined) ?? msg.session_id;
-      if (msgSessionId && !this._claudeSessionId) {
+      if (msgSessionId && msgSessionId !== this._claudeSessionId) {
         this._claudeSessionId = msgSessionId;
       }
 
