@@ -903,6 +903,32 @@ class CodemanApp {
   // Response Viewer — native-scroll panel for reading full Claude responses
   // ═══════════════════════════════════════════════════════════════
 
+  /** Strip dangerous elements and attributes from HTML (XSS prevention) */
+  _sanitizeHtml(html) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = html;
+    const frag = tpl.content;
+    for (const el of frag.querySelectorAll('script, iframe, object, embed, form, base, meta, link, style')) {
+      el.remove();
+    }
+    for (const el of frag.querySelectorAll('*')) {
+      for (const attr of [...el.attributes]) {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith('on')) {
+          el.removeAttribute(attr.name);
+        } else if (['href', 'src', 'action', 'xlink:href', 'formaction'].includes(name)) {
+          const val = attr.value.replace(/\s/g, '').toLowerCase();
+          if (val.startsWith('javascript:') || val.startsWith('vbscript:') || val.startsWith('data:text/html')) {
+            el.removeAttribute(attr.name);
+          }
+        }
+      }
+    }
+    const div = document.createElement('div');
+    div.appendChild(frag);
+    return div.innerHTML;
+  }
+
   /**
    * Strip ANSI escape sequences and Claude CLI chrome (status bar, hints,
    * spinner, progress bar) from a terminal buffer so the response viewer can
@@ -1000,8 +1026,8 @@ class CodemanApp {
   _renderMarkdown(text) {
     if (typeof marked !== 'undefined' && marked.parse) {
       try {
-        const prepared = this._preprocessAsciiArt(src);
-        let html = marked.parse(prepared, { breaks: true, gfm: true });
+        const prepared = this._preprocessAsciiArt(text);
+        let html = this._sanitizeHtml(marked.parse(prepared, { breaks: true, gfm: true }));
         // Wrap tables in a horizontal-scroll container so they overflow gracefully
         // on mobile without collapsing into block-level cells.
         html = html.replace(/<table>/g, '<div class="rv-table-wrap"><table>')
