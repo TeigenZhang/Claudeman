@@ -1,5 +1,18 @@
 # aicodeman
 
+## 0.6.8
+
+### Patch Changes
+
+- Finish the hostname-aware notification plumbing started in 0.6.7 and lock down the recent UI/runtime fixes with regression tests.
+  - Browser Notification API (OS-level desktop pop-ups, layer 3 of the 5-layer notification system) now uses `${originalTitle}: ${title}` instead of the hardcoded `Codeman:` literal — so multi-host users running Codeman on laptop / dev box / NAS see `codeman:<host>: <event>` consistently across tab title, tab-flash, Web Push, and OS notifications.
+  - Inline session rename hardened against three corner cases: IME composition commits (Chinese pinyin Enter no longer ships half-composed text as the session name), mid-rename SSE deletion (orphaned `<input>` no longer 404s on blur), and double-fire on stuck settle-once flag (closure-local `settled` boolean replaces the boolean instance flag).
+  - Test coverage backfilled for two prior shipped fixes:
+    - `<title>codeman:<host></title>` server-side templating (#82): 8 tests covering default `os.hostname()`, `--title-hostname` override, HTML-escape against `<script>`-style breakout, ampersand non-double-encoding, and template-tail byte-identical invariance.
+    - tmux size-query helper (#80): 15 tests covering the browser-resize-between-attaches happy path, the query-then-die race, zero/negative/empty/non-numeric output fallbacks, and argv-form/timeout assertions that lock down the no-shell-interpolation guarantee. Inline 14-line query block extracted into a named `queryTmuxWindowSize()` export in `session.ts` so the test surface is a pure function.
+  - Regression coverage added for `stripInkRedrawBloat` route helper.
+  - CLAUDE.md and README.md updated to document dual-CLI env-prefix discipline (`CLAUDE_CODE_*` vs `OPENCODE_*`), the `xterm-zerolag-input` published-package side-effect of overlay edits, and the unified hostname prefix across tab title / tab-flash / OS notifications.
+
 ## 0.6.7
 
 ### Patch Changes
