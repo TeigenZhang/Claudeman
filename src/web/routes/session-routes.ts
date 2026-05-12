@@ -78,7 +78,7 @@ const LEADING_WHITESPACE_PATTERN = /^[\s\r\n]+/;
  * Without clustering, a single first-VPA-finds-all approach would discard the entire
  * conversation after Claude's first render — losing 100KB+ of legitimate scrollback.
  */
-function stripInkRedrawBloat(buffer: string): string {
+export function stripInkRedrawBloat(buffer: string): string {
   // eslint-disable-next-line no-control-regex
   const vpaRe = /\x1b\[\d+d/g;
   const positions: number[] = [];
