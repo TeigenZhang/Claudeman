@@ -24,6 +24,8 @@ export interface MuxSession {
   sessionId: string;
   /** Multiplexer session name (e.g., "codeman-abc12345") */
   muxName: string;
+  /** Optional tmux socket name. Undefined means the legacy/default tmux server. */
+  tmuxSocket?: string;
   /** Process PID */
   pid: number;
   /** Timestamp when created */
