@@ -57,7 +57,7 @@ describe('session-routes', () => {
         method: 'GET',
         url: '/api/sessions/nonexistent',
       });
-      expect(res.statusCode).toBe(200); // returns error in body, not HTTP 404
+      expect(res.statusCode).toBe(404);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
       expect(body.error).toBeDefined();
@@ -128,7 +128,7 @@ describe('session-routes', () => {
         url: '/api/sessions/nonexistent/name',
         payload: { name: 'test' },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(404);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
@@ -181,7 +181,7 @@ describe('session-routes', () => {
         url: '/api/sessions/nonexistent/input',
         payload: { input: 'hello' },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(404);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
@@ -192,7 +192,7 @@ describe('session-routes', () => {
         url: `/api/sessions/${harness.ctx._sessionId}/input`,
         payload: {},
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
@@ -219,7 +219,7 @@ describe('session-routes', () => {
         url: `/api/sessions/${harness.ctx._sessionId}/resize`,
         payload: { cols: 501, rows: 24 },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
@@ -230,7 +230,7 @@ describe('session-routes', () => {
         url: `/api/sessions/${harness.ctx._sessionId}/resize`,
         payload: { cols: 80, rows: 201 },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
@@ -241,7 +241,7 @@ describe('session-routes', () => {
         url: `/api/sessions/${harness.ctx._sessionId}/resize`,
         payload: { cols: 0, rows: 24 },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
@@ -266,7 +266,7 @@ describe('session-routes', () => {
         method: 'GET',
         url: '/api/sessions/nonexistent/terminal',
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(404);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
@@ -292,7 +292,7 @@ describe('session-routes', () => {
         url: `/api/sessions/${harness.ctx._sessionId}/run`,
         payload: { prompt: '' },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
@@ -303,7 +303,7 @@ describe('session-routes', () => {
         url: '/api/sessions/nonexistent/run',
         payload: { prompt: 'test' },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(404);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
@@ -340,7 +340,7 @@ describe('session-routes', () => {
         method: 'POST',
         url: '/api/sessions/nonexistent/interactive',
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(404);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
@@ -404,7 +404,7 @@ describe('session-routes', () => {
         method: 'GET',
         url: '/api/sessions/nonexistent/output',
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(404);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
@@ -540,7 +540,7 @@ describe('session-routes', () => {
           resumeSessionId: 'not-a-uuid',
         },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });

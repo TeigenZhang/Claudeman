@@ -166,7 +166,7 @@ describe('system-routes', () => {
         url: '/api/config',
         payload: { unknownField: 'invalid' },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
@@ -361,7 +361,7 @@ describe('system-routes', () => {
         url: '/api/settings',
         payload: { unknownField: 'bad' },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
@@ -459,7 +459,7 @@ describe('system-routes', () => {
         url: '/api/subagent-window-states',
         payload: { minimized: { 'agent-1': 'not-a-boolean' } },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
@@ -516,7 +516,7 @@ describe('system-routes', () => {
         url: '/api/subagent-parents',
         payload: { 'agent-1': 123 },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
       expect(body.success).toBe(false);
     });
