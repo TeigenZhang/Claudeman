@@ -24,8 +24,6 @@ export interface MuxSession {
   sessionId: string;
   /** Multiplexer session name (e.g., "codeman-abc12345") */
   muxName: string;
-  /** Optional tmux socket name. Undefined means the legacy/default tmux server. */
-  tmuxSocket?: string;
   /** Process PID */
   pid: number;
   /** Timestamp when created */
@@ -99,6 +97,9 @@ export interface RespawnPaneOptions {
 export interface TerminalMultiplexer extends EventEmitter {
   /** Which backend this instance uses */
   readonly backend: 'tmux';
+
+  /** The dedicated tmux socket name all sessions live on (e.g. "codeman"). */
+  readonly muxSocket: string;
 
   // ========== Lifecycle ==========
 

@@ -77,14 +77,14 @@ describe('TmuxManager (unit)', () => {
   });
 
   describe('getAttachArgs', () => {
-    it('should attach unknown/new sessions through the isolated Codeman socket', () => {
+    it('should attach every session through the dedicated Codeman socket', () => {
       const args = manager.getAttachArgs('codeman-abc12345');
       expect(args).toEqual(['-L', 'codeman', 'attach-session', '-t', 'codeman-abc12345']);
     });
 
-    it('should keep legacy registered sessions on the default tmux socket', () => {
+    it('should attach registered sessions on the same dedicated socket (no per-session socket)', () => {
       manager.registerSession({
-        sessionId: 'legacy-session',
+        sessionId: 'some-session',
         muxName: 'codeman-abc12345',
         pid: 12345,
         createdAt: Date.now(),
@@ -94,7 +94,7 @@ describe('TmuxManager (unit)', () => {
       });
 
       const args = manager.getAttachArgs('codeman-abc12345');
-      expect(args).toEqual(['attach-session', '-t', 'codeman-abc12345']);
+      expect(args).toEqual(['-L', 'codeman', 'attach-session', '-t', 'codeman-abc12345']);
     });
   });
 
