@@ -39,7 +39,9 @@ import {
   type ClaudeMode,
   type SessionMode,
   type OpenCodeConfig,
+  type EffortLevel,
 } from './types.js';
+import { buildEffortCliArgs } from './session-cli-builder.js';
 import { wrapWithNice, SAFE_PATH_PATTERN, findClaudeDir, resolveOpenCodeDir } from './utils/index.js';
 import type {
   TerminalMultiplexer,
@@ -259,6 +261,20 @@ function buildOpenCodeCommand(config?: OpenCodeConfig): string {
  * Build the spawn command for any session mode.
  * Shared by createSession() and respawnPane() to avoid duplication.
  */
+/**
+ * Build the shell fragment carrying the effort level as a SOFT default
+ * (see buildEffortCliArgs — `--effort <level>` for regular levels incl. max,
+ * `--settings '{"ultracode":true}'` for ultracode; deliberately not the
+ * CLAUDE_CODE_EFFORT_LEVEL env var, which hard-locks /effort switching).
+ *
+ * Injection-safe: effort is validated against the EFFORT_LEVELS allowlist inside
+ * buildEffortCliArgs, so the single-quoted values contain no user-controlled characters.
+ */
+function buildEffortSettingsFlag(effort?: EffortLevel): string {
+  const [flag, value] = buildEffortCliArgs(effort);
+  return flag && value ? ` ${flag} '${value}'` : '';
+}
+
 function buildSpawnCommand(options: {
   mode: SessionMode;
   sessionId: string;
@@ -267,11 +283,13 @@ function buildSpawnCommand(options: {
   allowedTools?: string;
   openCodeConfig?: OpenCodeConfig;
   resumeSessionId?: string;
+  effort?: EffortLevel;
 }): string {
   if (options.mode === 'claude') {
     // Validate model to prevent command injection
     const safeModel = options.model && /^[a-zA-Z0-9._\-[\]]+$/.test(options.model) ? options.model : undefined;
     const modelFlag = safeModel ? ` --model "${safeModel}"` : '';
+    const effortFlag = buildEffortSettingsFlag(options.effort);
     // Use --resume to restore a previous conversation, otherwise --session-id for new sessions.
     // Wrap --resume in a fallback: if it exits non-zero (session not found, corrupt, etc.),
     // fall back to a new session with --session-id so the pane doesn't die.
@@ -279,11 +297,11 @@ function buildSpawnCommand(options: {
       options.resumeSessionId && /^[a-f0-9-]+$/.test(options.resumeSessionId) ? options.resumeSessionId : undefined;
     const permFlags = buildClaudePermissionFlags(options.claudeMode, options.allowedTools);
     if (safeResumeId) {
-      const resumeCmd = `claude${permFlags} --resume "${safeResumeId}"${modelFlag}`;
-      const fallbackCmd = `claude${permFlags} --session-id "${options.sessionId}"${modelFlag}`;
+      const resumeCmd = `claude${permFlags} --resume "${safeResumeId}"${modelFlag}${effortFlag}`;
+      const fallbackCmd = `claude${permFlags} --session-id "${options.sessionId}"${modelFlag}${effortFlag}`;
       return `${resumeCmd} || ${fallbackCmd}`;
     }
-    return `claude${permFlags} --session-id "${options.sessionId}"${modelFlag}`;
+    return `claude${permFlags} --session-id "${options.sessionId}"${modelFlag}${effortFlag}`;
   }
   if (options.mode === 'opencode') {
     return buildOpenCodeCommand(options.openCodeConfig);
@@ -518,6 +536,18 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
    * shell-metachar injection even if upstream schema check is bypassed.
    */
   private applyEnvOverrides(muxName: string, envOverrides?: Record<string, string>): void {
+    // Legacy cleanup: pre-0.7.2 set CLAUDE_CODE_EFFORT_LEVEL via setenv, which persists
+    // on the tmux session and hard-locks /effort switching in every respawned pane.
+    // Effort now flows as a `--settings` soft default (see buildEffortSettingsFlag),
+    // so unconditionally unset the stale var before applying current overrides.
+    try {
+      execSync(`${this.tmux()} setenv -t ${shellescape(muxName)} -u CLAUDE_CODE_EFFORT_LEVEL`, {
+        timeout: EXEC_TIMEOUT_MS,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch {
+      /* Non-critical — var may not exist */
+    }
     if (!envOverrides) return;
     const VALID_KEY = /^[A-Z_][A-Z0-9_]*$/;
     for (const [key, value] of Object.entries(envOverrides)) {
@@ -582,6 +612,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       openCodeConfig,
       resumeSessionId,
       envOverrides,
+      effort,
     } = options;
     const muxName = `codeman-${sessionId.slice(0, 8)}`;
 
@@ -628,6 +659,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       allowedTools,
       openCodeConfig,
       resumeSessionId,
+      effort,
     });
 
     const config = niceConfig || DEFAULT_NICE_CONFIG;
@@ -821,6 +853,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       openCodeConfig,
       resumeSessionId,
       envOverrides,
+      effort,
     } = options;
     const session = this.sessions.get(sessionId);
     if (!session) return null;
@@ -841,6 +874,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       allowedTools,
       openCodeConfig,
       resumeSessionId,
+      effort,
     });
     const config = niceConfig || DEFAULT_NICE_CONFIG;
     const cmd = wrapWithNice(baseCmd, config);

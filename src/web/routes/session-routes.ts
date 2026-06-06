@@ -335,6 +335,7 @@ export function registerSessionRoutes(
       openCodeConfig: mode === 'opencode' ? body.openCodeConfig : undefined,
       resumeSessionId: validatedResumeId,
       envOverrides: body.envOverrides,
+      effort: body.effort,
     });
 
     ctx.addSession(session);
@@ -1106,6 +1107,7 @@ export function registerSessionRoutes(
       mode = 'claude',
       openCodeConfig,
       envOverrides,
+      effort,
     } = parseBody(QuickStartSchema, req.body);
 
     // Check OpenCode availability if requested
@@ -1186,6 +1188,7 @@ export function registerSessionRoutes(
       allowedTools: qsClaudeModeConfig.allowedTools,
       openCodeConfig: mode === 'opencode' ? openCodeConfig : undefined,
       envOverrides,
+      effort,
     });
 
     // Auto-detect completion phrase from CLAUDE.md BEFORE broadcasting
