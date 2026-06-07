@@ -1007,6 +1007,13 @@ export class WebServer extends EventEmitter {
       const safeId = JSON.stringify(soloSessionId).replace(/</g, '\\u003c');
       html = html.replace('</head>', `<script>window.__CODEMAN_SOLO__=${safeId};</script>\n</head>`);
     }
+    // Gesture-control overlay (Phase 5): dashboard only (not solo popups, which
+    // have no tab strip), opt-in via CODEMAN_GESTURE=1. The bundle is served
+    // same-origin from /gesture/ so 'self' covers it; CSP is widened to match in
+    // registerSecurityHeaders under the same flag.
+    if (!soloSessionId && process.env.CODEMAN_GESTURE === '1') {
+      html = html.replace('</head>', `<script type="module" src="/gesture/gesture-codeman.js"></script>\n</head>`);
+    }
     return html;
   }
 
