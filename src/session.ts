@@ -42,9 +42,11 @@ import {
   NiceConfig,
   DEFAULT_NICE_CONFIG,
   getErrorMessage,
+  isEffortLevel,
   type ClaudeMode,
   type SessionMode,
   type OpenCodeConfig,
+  type EffortLevel,
 } from './types.js';
 import type { TerminalMultiplexer, MuxSession } from './mux-interface.js';
 import { TaskTracker, type BackgroundTask } from './task-tracker.js';
@@ -311,9 +313,14 @@ export class Session extends EventEmitter {
   private _openCodeConfig: OpenCodeConfig | undefined;
   private _resumeSessionId: string | undefined;
 
-  // Ephemeral env overrides (e.g., CLAUDE_CODE_EFFORT_LEVEL). Exported by tmux at spawn,
-  // preserved across respawns via persisted state. Not written to .claude/settings.local.json.
+  // Ephemeral env overrides (e.g., CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS). Exported by tmux
+  // at spawn, preserved across respawns via persisted state. Not written to .claude/settings.local.json.
   private _envOverrides: Record<string, string> | undefined;
+
+  // Claude CLI effort level — injected as a `--settings` soft default at spawn so the
+  // user can still switch in-session via /effort (incl. ultracode). Never carried as
+  // the CLAUDE_CODE_EFFORT_LEVEL env var, which would hard-lock the session.
+  private _effort: EffortLevel | undefined;
 
   // Session color for visual differentiation
   private _color: import('./types.js').SessionColor = 'default';
@@ -376,6 +383,8 @@ export class Session extends EventEmitter {
       resumeSessionId?: string;
       /** Extra env vars exported to the CLI at spawn time (no disk persistence) */
       envOverrides?: Record<string, string>;
+      /** Claude CLI effort level (soft default via --settings, switchable in-session via /effort) */
+      effort?: EffortLevel;
     }
   ) {
     super();
@@ -423,9 +432,19 @@ export class Session extends EventEmitter {
       this._openCodeConfig = config.openCodeConfig;
     }
 
-    // Apply env overrides (exported at spawn, not persisted to disk)
+    // Apply env overrides (exported at spawn, not persisted to disk).
+    // Legacy migration: pre-0.7.2 carried effort as the CLAUDE_CODE_EFFORT_LEVEL env var,
+    // which hard-locks /effort switching. Extract it into _effort (--settings soft default)
+    // and never export it as an env var again. Explicit config.effort wins over legacy.
     if (config.envOverrides && Object.keys(config.envOverrides).length > 0) {
-      this._envOverrides = { ...config.envOverrides };
+      const { CLAUDE_CODE_EFFORT_LEVEL: legacyEffort, ...restOverrides } = config.envOverrides;
+      this._envOverrides = Object.keys(restOverrides).length > 0 ? restOverrides : undefined;
+      if (legacyEffort && isEffortLevel(legacyEffort)) {
+        this._effort = legacyEffort;
+      }
+    }
+    if (config.effort && isEffortLevel(config.effort)) {
+      this._effort = config.effort;
     }
 
     // Initialize task tracker and forward events (store handlers for cleanup)
@@ -847,6 +866,7 @@ export class Session extends EventEmitter {
       cliLatestVersion: this._cliLatestVersion || undefined,
       openCodeConfig: this._openCodeConfig,
       resumeSessionId: this._resumeSessionId,
+      effort: this._effort,
       // envOverrides intentionally NOT on the public SessionState type — they must not
       // leak into SSE / GET /api/sessions broadcasts (schema allows OPENCODE_*, which
       // can carry secrets). For disk persistence, session-manager calls
@@ -1038,6 +1058,7 @@ export class Session extends EventEmitter {
             openCodeConfig: this._openCodeConfig,
             resumeSessionId: this._resumeSessionId,
             envOverrides: this._envOverrides,
+            effort: this._effort,
           },
           createSessionOptions: {
             sessionId: this.id,
@@ -1051,6 +1072,7 @@ export class Session extends EventEmitter {
             openCodeConfig: this._openCodeConfig,
             resumeSessionId: this._resumeSessionId,
             envOverrides: this._envOverrides,
+            effort: this._effort,
           },
           spawnErrLabel: 'mux attachment',
         });
@@ -1120,7 +1142,7 @@ export class Session extends EventEmitter {
       try {
         // Pass --session-id to use the SAME ID as the Codeman session
         // This ensures subagents can be directly matched to the correct tab
-        const args = buildInteractiveArgs(this.id, this._claudeMode, this._model, this._allowedTools);
+        const args = buildInteractiveArgs(this.id, this._claudeMode, this._model, this._allowedTools, this._effort);
         this.ptyProcess = pty.spawn('claude', args, {
           name: 'xterm-256color',
           cols: 120,

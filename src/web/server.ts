@@ -1716,6 +1716,8 @@ export class WebServer extends EventEmitter {
             const recoveryClaudeMode = await this.getClaudeModeConfig();
             // Recover envOverrides from the internal __envOverrides field written by
             // session-manager (see updateSessionState). Cast to read the non-public field.
+            // Note: a legacy CLAUDE_CODE_EFFORT_LEVEL entry is auto-migrated to `effort`
+            // by the Session constructor (env var would hard-lock /effort switching).
             const savedEnvOverrides = (savedState as { __envOverrides?: Record<string, string> })?.__envOverrides;
             const session = new Session({
               id: muxSession.sessionId, // Preserve the original session ID
@@ -1728,6 +1730,7 @@ export class WebServer extends EventEmitter {
               claudeMode: recoveryClaudeMode.claudeMode,
               allowedTools: recoveryClaudeMode.allowedTools,
               envOverrides: savedEnvOverrides,
+              effort: savedState?.effort,
             });
 
             // Update session name if it was a "Restored:" placeholder or doesn't match saved name
