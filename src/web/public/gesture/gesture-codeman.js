@@ -4352,10 +4352,10 @@ var GestureController = class {
   }
   async loadRecognizer() {
     const fileset = await Po.forVisionTasks(this.opts.wasmBase);
-    this.recognizer = await fc.createFromOptions(fileset, {
+    const build = (delegate) => fc.createFromOptions(fileset, {
       baseOptions: {
         modelAssetPath: this.opts.modelUrl,
-        delegate: "GPU"
+        delegate
       },
       runningMode: "VIDEO",
       numHands: this.opts.numHands,
@@ -4363,6 +4363,12 @@ var GestureController = class {
       minHandPresenceConfidence: this.opts.minDetectionConfidence,
       minTrackingConfidence: this.opts.minTrackingConfidence
     });
+    try {
+      this.recognizer = await build("GPU");
+    } catch (err) {
+      console.warn("[gesture] GPU delegate failed; falling back to CPU.", err);
+      this.recognizer = await build("CPU");
+    }
   }
   trackFps(nowMs) {
     this.frameTimes.push(nowMs);
@@ -4445,7 +4451,10 @@ var GestureController = class {
 
 // src/codeman/entry.ts
 var TAB_SELECTOR = ".session-tab";
+var CLICK_SELECTOR = "#runBtn, .btn-shell";
 var Z2 = 2147483e3;
+var DETACH_PULL_PX = 70;
+var TAP_CANCEL_PX = 45;
 var handColor = (handedness, pinching) => pinching ? "#4ade80" : handedness === "Right" ? "#a78bfa" : "#38bdf8";
 var GestureBridge = class {
   constructor() {
@@ -4454,44 +4463,59 @@ var GestureBridge = class {
     __publicField(this, "ctx");
     __publicField(this, "video");
     __publicField(this, "button");
+    __publicField(this, "camBtn");
     __publicField(this, "status");
     __publicField(this, "gc");
     __publicField(this, "running", false);
-    /** Per-hand id of the session tab grabbed at pinch-start (detached on drop). */
-    __publicField(this, "grabbedByHand", /* @__PURE__ */ new Map());
+    /** Camera view: full-viewport dimmed background, or small corner preview. */
+    __publicField(this, "camMode", "full");
+    /** Per-hand in-progress grab (the tab grabbed at pinch-start). */
+    __publicField(this, "grabs", /* @__PURE__ */ new Map());
+    /** Per-hand in-progress button pinch (fires on release if it didn't drift). */
+    __publicField(this, "taps", /* @__PURE__ */ new Map());
     injectStyles();
     this.surface = el("div", "cg-surface");
     this.canvas = el("canvas", "cg-canvas");
     this.video = el("video", "cg-preview");
     this.video.muted = true;
     this.video.playsInline = true;
+    this.applyCamMode();
     const dock = el("div", "cg-dock");
     this.button = el("button", "cg-btn");
     this.button.textContent = "\u{1F590} Gesture";
+    this.camBtn = el("button", "cg-btn cg-btn-icon");
+    this.camBtn.textContent = "\u26F6";
+    this.camBtn.title = "Toggle camera size (fullscreen / corner)";
     this.status = el("span", "cg-status");
     this.status.textContent = "off";
-    dock.append(this.button, this.status);
-    document.body.append(this.surface, this.canvas, this.video, dock);
+    dock.append(this.button, this.camBtn, this.status);
+    document.body.append(this.surface, this.video, this.canvas, dock);
     this.ctx = this.canvas.getContext("2d");
     this.sizeCanvas();
     window.addEventListener("resize", () => this.sizeCanvas());
     this.gc = new GestureController({
       video: this.video,
       surface: this.surface,
-      numHands: 1
+      numHands: 1,
+      // Self-host the MediaPipe runtime + model from Codeman (same-origin) instead
+      // of the CDN, so an ad/content blocker, offline desk, or strict browser
+      // can't break startup (the CDN failure surfaced as `failed: {isTrusted}` —
+      // a resource load-error Event). Served from public/gesture/.
+      wasmBase: "/gesture/wasm",
+      modelUrl: "/gesture/gesture_recognizer.task"
     });
     this.gc.on("grab", (p2) => this.onGrab(p2.hand, p2.x, p2.y));
     this.gc.on("drag", (p2) => this.onDrag(p2.hand, p2.x, p2.y));
     this.gc.on("drop", (p2) => this.onDrop(p2.hand));
     this.gc.on("status", ({ fps, hands }) => this.onStatus(fps, hands));
     this.button.addEventListener("click", () => void this.toggle());
+    this.camBtn.addEventListener("click", () => this.toggleCamMode());
   }
   async toggle() {
     if (this.running) {
       this.gc.stop();
       this.running = false;
-      this.grabbedByHand.clear();
-      this.clearHighlights();
+      this.cancelAllGrabs();
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.button.classList.remove("on");
       this.status.textContent = "off";
@@ -4503,42 +4527,118 @@ var GestureBridge = class {
       await this.gc.start();
       this.running = true;
       this.button.classList.add("on");
-      this.status.textContent = "on \u2014 pinch a tab";
+      this.status.textContent = "on \u2014 pinch a tab or button";
     } catch (err) {
-      this.status.textContent = `failed: ${err.message}`;
+      const msg = describeError(err);
+      this.status.textContent = `failed: ${msg}`;
+      this.status.title = msg;
       console.error("[gesture] start failed", err);
     } finally {
       this.button.disabled = false;
     }
   }
-  /** Tab element at a viewport point (our overlays are click-through). */
-  tabAt(x2, y2) {
+  toggleCamMode() {
+    this.camMode = this.camMode === "full" ? "pip" : "full";
+    this.applyCamMode();
+  }
+  applyCamMode() {
+    this.video.classList.toggle("cg-full", this.camMode === "full");
+    this.video.classList.toggle("cg-pip", this.camMode === "pip");
+  }
+  /** Top-most element matching `sel` at a viewport point (overlays are
+   *  click-through, so elementFromPoint sees the dashboard beneath). */
+  hitClosest(x2, y2, sel) {
     const hit = document.elementFromPoint(x2, y2);
-    return hit?.closest(TAB_SELECTOR) ?? null;
+    return hit?.closest(sel) ?? null;
   }
   onGrab(hand, x2, y2) {
-    const tab = this.tabAt(x2, y2);
+    const tab = this.hitClosest(x2, y2, TAB_SELECTOR);
     const id = tab?.dataset.id;
-    if (id) {
-      this.grabbedByHand.set(hand, id);
+    if (tab && id) {
+      const rect = tab.getBoundingClientRect();
+      const ghost = tab.cloneNode(true);
+      ghost.classList.add("cg-ghost");
+      ghost.removeAttribute("id");
+      ghost.style.width = `${rect.width}px`;
+      ghost.style.height = `${rect.height}px`;
+      document.body.append(ghost);
       tab.classList.add("cg-grabbed");
+      const grab = { id, tab, ghost, ox: x2, oy: y2, armed: false };
+      this.grabs.set(hand, grab);
+      this.positionGhost(grab, x2, y2);
+      return;
+    }
+    const btn = this.hitClosest(x2, y2, CLICK_SELECTOR);
+    if (btn) {
+      const label = (btn.textContent || btn.getAttribute("title") || "button").trim();
+      btn.classList.add("cg-tap-armed");
+      this.taps.set(hand, { el: btn, label, ox: x2, oy: y2 });
+      this.status.textContent = `release to ${label.toLowerCase()}`;
     }
   }
-  onDrag(hand, _x, _y) {
+  onDrag(hand, x2, y2) {
+    const grab = this.grabs.get(hand);
+    if (grab) {
+      this.positionGhost(grab, x2, y2);
+      const pulled = Math.hypot(x2 - grab.ox, y2 - grab.oy) >= DETACH_PULL_PX;
+      if (pulled !== grab.armed) {
+        grab.armed = pulled;
+        grab.ghost.classList.toggle("cg-armed", pulled);
+        this.status.textContent = pulled ? "release to detach" : "on \u2014 pinch a tab";
+      }
+      return;
+    }
+    const tap = this.taps.get(hand);
+    if (tap && Math.hypot(x2 - tap.ox, y2 - tap.oy) > TAP_CANCEL_PX) {
+      tap.el.classList.remove("cg-tap-armed");
+      this.taps.delete(hand);
+      this.status.textContent = "on \u2014 pinch a tab or button";
+    }
   }
   onDrop(hand) {
-    const id = this.grabbedByHand.get(hand);
-    this.grabbedByHand.delete(hand);
-    if (!id) return;
-    document.querySelector(`${TAB_SELECTOR}[data-id="${cssEscape(id)}"]`)?.classList.remove("cg-grabbed");
-    const app = window.app;
-    if (app?.detachSession) {
-      app.detachSession(id);
-      this.flash(`detached`);
-    } else {
-      this.flash("app.detachSession unavailable");
-      console.warn("[gesture] window.app.detachSession not found");
+    const grab = this.grabs.get(hand);
+    if (grab) {
+      this.grabs.delete(hand);
+      grab.ghost.remove();
+      grab.tab.classList.remove("cg-grabbed");
+      if (grab.armed) this.detach(grab.id);
+      else this.flash("cancelled");
+      return;
     }
+    const tap = this.taps.get(hand);
+    if (tap) {
+      this.taps.delete(hand);
+      tap.el.classList.remove("cg-tap-armed");
+      tap.el.click();
+      this.flash(tap.label.toLowerCase());
+    }
+  }
+  /** Undock a session by calling Codeman's own wired entry point directly. */
+  detach(id) {
+    const app = window.app;
+    if (app && typeof app.detachSession === "function") {
+      app.detachSession(id);
+      this.flash("undocked");
+      return;
+    }
+    this.flash("undock unavailable");
+    console.warn(
+      "[gesture] window.app.detachSession not found \u2014 is Codeman on the session-detach build?"
+    );
+  }
+  positionGhost(grab, x2, y2) {
+    grab.ghost.style.left = `${x2}px`;
+    grab.ghost.style.top = `${y2}px`;
+  }
+  cancelAllGrabs() {
+    for (const grab of this.grabs.values()) {
+      grab.ghost.remove();
+      grab.tab.classList.remove("cg-grabbed");
+    }
+    this.grabs.clear();
+    for (const tap of this.taps.values()) tap.el.classList.remove("cg-tap-armed");
+    this.taps.clear();
+    document.querySelectorAll(`${TAB_SELECTOR}.cg-grabbed, .cg-tap-armed`).forEach((t2) => t2.classList.remove("cg-grabbed", "cg-tap-armed"));
   }
   onStatus(fps, hands) {
     const { width, height } = this.canvas;
@@ -4555,13 +4655,12 @@ var GestureBridge = class {
       this.ctx.fill();
       this.ctx.globalAlpha = 1;
     }
-    if (this.running) this.status.textContent = `on \xB7 ${fps}fps`;
+    if (this.running && this.grabs.size === 0 && this.taps.size === 0) {
+      this.status.textContent = `on \xB7 ${fps}fps`;
+    }
   }
   flash(msg) {
     this.status.textContent = msg;
-  }
-  clearHighlights() {
-    document.querySelectorAll(`${TAB_SELECTOR}.cg-grabbed`).forEach((t2) => t2.classList.remove("cg-grabbed"));
   }
   sizeCanvas() {
     const dpr = window.devicePixelRatio || 1;
@@ -4574,9 +4673,20 @@ function el(tag, className) {
   node.className = className;
   return node;
 }
-function cssEscape(s2) {
-  const cssApi = window.CSS;
-  return cssApi?.escape ? cssApi.escape(s2) : s2.replace(/["\\]/g, "\\$&");
+function describeError(err) {
+  if (err instanceof Error) return err.message || err.name || "Error";
+  if (typeof err === "string") return err;
+  if (typeof err === "number") return `code ${err}`;
+  if (err && typeof err === "object") {
+    const m2 = err.message;
+    if (typeof m2 === "string" && m2) return m2;
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return Object.prototype.toString.call(err);
+    }
+  }
+  return String(err);
 }
 function injectStyles() {
   if (document.getElementById("cg-styles")) return;
@@ -4584,22 +4694,36 @@ function injectStyles() {
   .cg-surface, .cg-canvas { position: fixed; inset: 0; pointer-events: none; }
   .cg-surface { z-index: ${Z2}; }
   .cg-canvas  { z-index: ${Z2 + 1}; width: 100vw; height: 100vh; }
-  .cg-preview {
-    position: fixed; right: 12px; bottom: 12px; width: 200px; height: 112px;
-    object-fit: cover; transform: scaleX(-1); border-radius: 8px; z-index: ${Z2 + 2};
-    box-shadow: 0 4px 16px rgba(0,0,0,.5); pointer-events: none; background: #000;
+  .cg-preview { transform: scaleX(-1); pointer-events: none; background: #000; }
+  .cg-preview.cg-pip {
+    position: fixed; right: 12px; bottom: 12px; width: 240px; height: 135px;
+    object-fit: cover; border-radius: 8px; z-index: ${Z2 + 2};
+    box-shadow: 0 4px 16px rgba(0,0,0,.5); opacity: 1;
   }
+  .cg-preview.cg-full {
+    position: fixed; inset: 0; width: 100vw; height: 100vh;
+    object-fit: cover; opacity: .28; z-index: ${Z2};
+  }
+  .cg-ghost {
+    position: fixed; left: 0; top: 0; transform: translate(-50%, -50%) scale(1.06);
+    z-index: ${Z2 + 2}; pointer-events: none; opacity: .92;
+    box-shadow: 0 8px 28px rgba(0,0,0,.55); border-radius: 8px;
+    outline: 2px solid #38bdf8; outline-offset: -2px;
+  }
+  .cg-ghost.cg-armed { outline-color: #4ade80; box-shadow: 0 8px 28px rgba(74,222,128,.5); }
   .cg-dock {
-    position: fixed; right: 12px; bottom: 132px; z-index: ${Z2 + 3};
+    position: fixed; right: 12px; bottom: 156px; z-index: ${Z2 + 3};
     display: flex; align-items: center; gap: 8px; font: 12px/1 system-ui, sans-serif;
   }
   .cg-btn {
     padding: 6px 12px; border-radius: 6px; border: 1px solid #3a3a40;
     background: #1b1b1f; color: #e5e5e7; cursor: pointer;
   }
+  .cg-btn-icon { padding: 6px 9px; }
   .cg-btn.on { background: #16331f; border-color: #2f6b41; color: #4ade80; }
-  .cg-status { color: #9aa0a6; }
-  .session-tab.cg-grabbed { outline: 2px solid #4ade80; outline-offset: -2px; }
+  .cg-status { color: #9aa0a6; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session-tab.cg-grabbed { opacity: .35; outline: 2px dashed #4ade80; outline-offset: -2px; }
+  .cg-tap-armed { outline: 2px solid #4ade80 !important; outline-offset: 2px; box-shadow: 0 0 0 4px rgba(74,222,128,.25) !important; }
   `;
   const style = document.createElement("style");
   style.id = "cg-styles";

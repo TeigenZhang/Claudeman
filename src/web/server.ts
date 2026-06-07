@@ -36,7 +36,7 @@ import fastifyMultipart from '@fastify/multipart';
 import { startPasteImageGc } from './paste-image-gc.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdirSync, readFileSync, chmodSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, chmodSync, rmSync, statSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import { execSync } from 'node:child_process';
 import { hostname as getHostname } from 'node:os';
@@ -1012,9 +1012,24 @@ export class WebServer extends EventEmitter {
     // same-origin from /gesture/ so 'self' covers it; CSP is widened to match in
     // registerSecurityHeaders under the same flag.
     if (!soloSessionId && process.env.CODEMAN_GESTURE === '1') {
-      html = html.replace('</head>', `<script type="module" src="/gesture/gesture-codeman.js"></script>\n</head>`);
+      const v = this.gestureBundleVersion();
+      html = html.replace('</head>', `<script type="module" src="/gesture/gesture-codeman.js${v}"></script>\n</head>`);
     }
     return html;
+  }
+
+  /** Cache-busting query for the gesture bundle: its mtime, re-read per render.
+   *  The bundle is served from /gesture/ with a 1-year cache, so without a
+   *  version that changes on redeploy the browser would keep running a stale
+   *  bundle forever. Re-stat'ing each render means a freshly copied-in bundle is
+   *  picked up with no server restart. Empty string if the file is missing. */
+  private gestureBundleVersion(): string {
+    try {
+      const p = join(__dirname, 'public', 'gesture', 'gesture-codeman.js');
+      return `?v=${Math.floor(statSync(p).mtimeMs)}`;
+    } catch {
+      return '';
+    }
   }
 
   private async setupSessionListeners(session: Session): Promise<void> {
