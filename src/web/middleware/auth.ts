@@ -158,9 +158,11 @@ export function registerSecurityHeaders(app: FastifyInstance, https: boolean): v
   // needs WebAssembly eval and must fetch its wasm/model from the pinned CDNs.
   // Computed once; OFF by default so the production CSP is byte-for-byte unchanged.
   const gesture = process.env.CODEMAN_GESTURE === '1';
-  const scriptSrc = "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net" + (gesture ? " 'wasm-unsafe-eval'" : '');
+  const scriptSrc =
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net" + (gesture ? " 'wasm-unsafe-eval'" : '');
   const connectSrc =
-    "connect-src 'self' wss://api.deepgram.com" + (gesture ? ' https://cdn.jsdelivr.net https://storage.googleapis.com' : '');
+    "connect-src 'self' wss://api.deepgram.com" +
+    (gesture ? ' https://cdn.jsdelivr.net https://storage.googleapis.com' : '');
   const workerSrc = gesture ? "; worker-src 'self' blob:" : '';
   const csp =
     `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; ` +
