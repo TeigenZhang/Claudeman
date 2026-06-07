@@ -155,14 +155,14 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
  */
 export function registerSecurityHeaders(app: FastifyInstance, https: boolean): void {
   // Gesture-control overlay (opt-in via CODEMAN_GESTURE=1) runs MediaPipe, which
-  // needs WebAssembly eval and must fetch its wasm/model from the pinned CDNs.
-  // Computed once; OFF by default so the production CSP is byte-for-byte unchanged.
+  // needs WebAssembly eval (script-src) and blob workers (worker-src). Its wasm
+  // runtime + model are self-hosted under /gesture/ (same-origin, covered by
+  // 'self'), so no CDN connect-src entries are needed. OFF by default so the
+  // production CSP is byte-for-byte unchanged.
   const gesture = process.env.CODEMAN_GESTURE === '1';
   const scriptSrc =
     "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net" + (gesture ? " 'wasm-unsafe-eval'" : '');
-  const connectSrc =
-    "connect-src 'self' wss://api.deepgram.com" +
-    (gesture ? ' https://cdn.jsdelivr.net https://storage.googleapis.com' : '');
+  const connectSrc = "connect-src 'self' wss://api.deepgram.com";
   const workerSrc = gesture ? "; worker-src 'self' blob:" : '';
   const csp =
     `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; ` +
