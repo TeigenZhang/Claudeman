@@ -56,7 +56,7 @@ When user says "COM":
 
 CI runs `npm run check:lockfile` on every push/PR, so lockfile drift fails the build even if the `version-packages` script is bypassed.
 
-**Version**: 0.9.1 (must match `package.json`)
+**Version**: 0.9.2 (must match `package.json`)
 
 ## Project Overview
 
@@ -82,6 +82,8 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 | Continuous typecheck | `tsc --noEmit --watch` |
 | Test coverage | `npm run test:coverage` |
 | Dead-code sweep | `npm run knip` (config in `knip.json`) |
+| Rebuild gesture overlay | `npm run build:gesture` (esbuild `packages/gesture-control/src/codeman/entry.ts` → `src/web/public/gesture/gesture-codeman.js`; commit the result) |
+| Gesture playground | `npm run dev` **in** `packages/gesture-control/` (standalone vite demo, fake tabs) |
 | Check public-asset formatting | `npm run check:public-assets` (prettier-checks `src/web/public/**` text assets; `scripts/check-public-assets.mjs`) |
 | Production start | `npm run start` |
 | Production logs | `journalctl --user -u codeman-web -f` |
@@ -130,7 +132,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 
 ★ = Large file (>50KB). All files have `@fileoverview` JSDoc — read that before diving in. Discovery aid: `grep -l '@fileoverview' src/web/routes/*.ts` lists all route modules; same grep works for `src/types/`, `src/web/public/*.js`.
 
-**Local package**: `packages/xterm-zerolag-input/` — local echo overlay for xterm.js; copy embedded in `app.js`.
+**Local packages**: `packages/xterm-zerolag-input/` — local echo overlay for xterm.js; copy embedded in `app.js`. `packages/gesture-control/` (`codeman-gesture-control`) — hand-tracking overlay source; built to `src/web/public/gesture/gesture-codeman.js` via `npm run build:gesture` (see Frontend → Gesture control).
 
 **Config**: `src/config/` — 10 files. Import from specific files, not barrel.
 
@@ -168,6 +170,8 @@ Frontend JS modules have `@fileoverview` with `@dependency`/`@loadorder` tags. L
 **Multi-monitor button** (header, top-right; the notification bell it sits beside stays hidden — notifications live in Settings → Notifications). `app.launchMultiMonitor()` (in `panels-ui.js`) POSTs `/api/system/span-displays`, which spawns `scripts/span-codeman.sh` — a fresh, maximized browser `--app` window sized to the union of all displays (macOS; needs "Displays have separate Spaces" OFF). Supports the gesture layer's in-page floating session panels dragging across the physical monitor seam. **Opt-in:** hidden by default; enable under App Settings → Display → **Header Displays** ("Multi-monitor Button", `showMultiMonitorButton`). The button carries a `btn-multimonitor--hidden` class in the template; `renderIndexHtml` strips that class at render when the setting is on (a unique class token, not a brittle match on the aria-label/style copy), and `applyHeaderVisibilitySettings()` toggles the same class live on save. Solo (detached) windows hide it via `body.solo-mode`.
 
 **Gesture control** (the camera hand-tracking overlay) is **opt-in, default OFF**, under App Settings → Display → **Input** (`gestureControlEnabled`). `CODEMAN_GESTURE=1` makes the feature *available* on the instance (CSP widening + `/gesture/` assets) and sets `window.__codemanGestureAvailable` (the Input section only shows when set); the overlay bundle is injected by `renderIndexHtml` **only when the setting is enabled**, so that method is `async` and reads `settings.json` via `readSettings(true)` — the `true` forces a **fresh** read (bypassing the 2s `_settingsCache`), because a post-save reload happens within that TTL and the cached value would otherwise render the pre-toggle state. Toggling the setting reloads the page (the bundle is render-injected).
+
+**Gesture-control source lives in-repo** at `packages/gesture-control/` (workspace package `codeman-gesture-control`, was the standalone `Ark0N/codeman-gesture-control` repo). The transport-agnostic core is `src/gesture/*` (MediaPipe GestureRecognizer → One-Euro-filtered cursor → pinch state machine); `src/codeman/entry.ts` is the Codeman *consumer* that maps grab/drag/drop onto real `.session-tab`/toolbar buttons and is the bundle entry. **Edit there, then run `npm run build:gesture`** (`scripts/build-gesture-bundle.mjs` → esbuild bundles `entry.ts`, MediaPipe JS included, into `src/web/public/gesture/gesture-codeman.js`) and **commit the regenerated bundle** — the committed bundle is what dev/`tsx` serves (no bundler at runtime), and `scripts/build.mjs` reruns the same step so prod always reflects current source. The MediaPipe **wasm + model** are NOT bundled — loaded at runtime from same-origin `/gesture/wasm` + `/gesture/gesture_recognizer.task`, fetched by `scripts/fetch-gesture-assets.mjs` (gitignored, see Gotchas). `entry.ts` mounts `window.__codemanGesture = new GestureBridge()` idempotently at module-eval. A standalone vite playground (`npm run dev` in the package — fake tabs, no Codeman) lets you iterate on gesture *feel* in isolation. ⚠️ Keep `MP_VERSION` in `fetch-gesture-assets.mjs` in sync with `@mediapipe/tasks-vision` in `packages/gesture-control/package.json`.
 
 **Respawn presets**: `solo-work` (3s/60min), `subagent-workflow` (45s/240min), `team-lead` (90s/480min), `ralph-todo` (8s/480min), `overnight-autonomous` (10s/480min).
 

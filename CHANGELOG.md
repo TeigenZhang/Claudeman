@@ -1,5 +1,17 @@
 # aicodeman
 
+## 0.9.2
+
+### Patch Changes
+
+- Vendor the gesture-control source into the repo for in-tree development.
+
+  The hand-tracking overlay's source (previously the standalone `Ark0N/codeman-gesture-control` repo) now lives at `packages/gesture-control/` as the `codeman-gesture-control` workspace package: the transport-agnostic gesture core (`src/gesture/*` — MediaPipe GestureRecognizer → One-Euro-filtered cursor → pinch state machine), the Codeman consumer entry (`src/codeman/entry.ts`, maps grab/drag/drop onto real session tabs + toolbar buttons), and a standalone vite playground for iterating on gesture feel.
+  - New `npm run build:gesture` (`scripts/build-gesture-bundle.mjs`) esbuild-bundles `entry.ts` into the served `src/web/public/gesture/gesture-codeman.js`; `scripts/build.mjs` now reruns it on every production build so the served bundle always reflects current source. The MediaPipe wasm + model stay runtime-loaded from same-origin `/gesture/` (unchanged).
+  - Added `@mediapipe/tasks-vision@0.10.21` as the package dependency (kept in sync with `fetch-gesture-assets.mjs`). The playground uses vite 7 (no known advisories).
+
+  No change to the shipped app behavior — gesture control remains opt-in (`CODEMAN_GESTURE=1` + the App Settings → Input toggle). This release just makes the overlay developable inside the Codeman repo.
+
 ## 0.9.1
 
 ### Patch Changes
