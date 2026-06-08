@@ -73,6 +73,9 @@ const GRACEFUL_SHUTDOWN_WAIT_MS = 100;
 /** Default stats collection interval (2 seconds) */
 const DEFAULT_STATS_INTERVAL_MS = 2000;
 
+/** Stable cwd for tmux server/pane launch; actual session cwd is reached inside the pane. */
+const TMUX_LAUNCH_CWD = '/tmp';
+
 /** Claude Code native macOS recommendation for avoiding low nofile startup failures. */
 export const CLAUDE_CODE_NOFILE_LIMIT = 2147483646;
 
@@ -679,8 +682,10 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       // (Production uses systemd which has a clean env, but dev/test may be nested.)
       const cleanEnv = { ...process.env };
       delete cleanEnv.TMUX;
-      execSync(`${this.tmux()} new-session -ds "${muxName}" -c "${workingDir}"`, {
-        cwd: workingDir,
+      // Start the tmux server from a stable local cwd so FUSE/rclone workspace
+      // blips do not poison tmux's long-lived getcwd state.
+      execSync(`${this.tmux()} new-session -ds "${muxName}" -c ${TMUX_LAUNCH_CWD}`, {
+        cwd: TMUX_LAUNCH_CWD,
         timeout: EXEC_TIMEOUT_MS,
         stdio: 'ignore',
         env: cleanEnv,
@@ -706,11 +711,16 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       // so secret values stay off the bash command line. Must run before respawn-pane.
       this.applyEnvOverrides(muxName, envOverrides);
 
-      // Replace the shell with the actual command (no echo in terminal)
-      execSync(`${this.tmux()} respawn-pane -k -t "${muxName}" bash -c ${JSON.stringify(fullCmd)}`, {
-        timeout: EXEC_TIMEOUT_MS,
-        stdio: 'ignore',
-      });
+      // Replace the shell with the actual command (no echo in terminal). Keep
+      // pane launch in /tmp, then cd inside bash against the current mount table.
+      const launchCmd = `cd ${JSON.stringify(workingDir)} && ${fullCmd}`;
+      execSync(
+        `${this.tmux()} respawn-pane -k -c ${TMUX_LAUNCH_CWD} -t "${muxName}" bash -c ${JSON.stringify(launchCmd)}`,
+        {
+          timeout: EXEC_TIMEOUT_MS,
+          stdio: 'ignore',
+        }
+      );
 
       // Wait for tmux session to be queryable
       await new Promise((resolve) => setTimeout(resolve, TMUX_CREATION_WAIT_MS));
@@ -890,9 +900,13 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       // Re-apply user env overrides before respawn so the new shell inherits them.
       this.applyEnvOverrides(muxName, envOverrides);
 
-      await execAsync(`${this.tmux()} respawn-pane -k -t "${muxName}" bash -c ${JSON.stringify(fullCmd)}`, {
-        timeout: EXEC_TIMEOUT_MS,
-      });
+      const launchCmd = `cd ${JSON.stringify(workingDir)} && ${fullCmd}`;
+      await execAsync(
+        `${this.tmux()} respawn-pane -k -c ${TMUX_LAUNCH_CWD} -t "${muxName}" bash -c ${JSON.stringify(launchCmd)}`,
+        {
+          timeout: EXEC_TIMEOUT_MS,
+        }
+      );
       // Wait for the respawned process to start
       await new Promise((resolve) => setTimeout(resolve, TMUX_CREATION_WAIT_MS));
       const pid = this.getPanePid(muxName);
