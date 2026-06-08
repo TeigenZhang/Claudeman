@@ -4,7 +4,8 @@
  */
 
 import { FastifyInstance } from 'fastify';
-import { join } from 'node:path';
+import { basename as pathBasename, join } from 'node:path';
+import { homedir } from 'node:os';
 import fs from 'node:fs/promises';
 import { ApiErrorCode, createErrorResponse, getErrorMessage } from '../../types.js';
 import { fileStreamManager } from '../../file-stream-manager.js';
@@ -278,7 +279,6 @@ export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort): void
         jpeg: 'image/jpeg',
         gif: 'image/gif',
         webp: 'image/webp',
-        svg: 'image/svg+xml',
         ico: 'image/x-icon',
         bmp: 'image/bmp',
         mp4: 'video/mp4',
@@ -292,19 +292,21 @@ export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort): void
       };
 
       const content = await fs.readFile(resolvedPath);
-      if (download === 'true') {
-        const rawBasename = filePath!.split('/').pop() || 'download';
-        // Sanitize filename for Content-Disposition header (prevent header injection)
-        const basename = rawBasename.replace(/["\\\r\n]/g, '_');
+      const rawBasename = filePath!.split('/').pop() || 'download';
+      // Sanitize filename for Content-Disposition header (prevent header injection)
+      const basename = rawBasename.replace(/["\\\r\n]/g, '_');
+      if (download === 'true' || ext === 'svg') {
         reply.raw.writeHead(200, {
-          'Content-Type': mimeTypes[ext] || 'application/octet-stream',
+          'Content-Type': ext === 'svg' ? 'application/octet-stream' : mimeTypes[ext] || 'application/octet-stream',
           'Content-Disposition': `attachment; filename="${basename}"`,
           'Content-Length': content.length,
+          'X-Content-Type-Options': 'nosniff',
         });
         reply.raw.end(content);
         return;
       }
       reply.header('Content-Type', mimeTypes[ext] || 'application/octet-stream');
+      reply.header('X-Content-Type-Options', 'nosniff');
       reply.send(content);
     } catch (err) {
       reply
@@ -379,5 +381,109 @@ export function registerFileRoutes(app: FastifyInstance, ctx: SessionPort): void
     findSessionOrFail(ctx, id); // Validates session exists
     const closed = fileStreamManager.closeStream(streamId);
     return { success: closed };
+  });
+  // Session-scoped file download.
+  // Uses the same realpath-based workspace boundary as file preview/raw routes;
+  // the sensitive-path blocklist remains defense-in-depth, not the primary boundary.
+  const SENSITIVE_PATTERNS: RegExp[] = [
+    /^\/etc\/shadow$/,
+    /^\/etc\/gshadow$/,
+    /^\/etc\/master\.passwd$/,
+    new RegExp(`^${homedir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/\\.ssh\\/`),
+    /\/\.env$/,
+    /\/\.env\./,
+    /\/credentials(\.json|\.yml|\.yaml|\.xml)?$/i,
+    /\/\.aws\/credentials$/,
+    /\/\.gcloud\/credentials\.db$/,
+    /\/\.docker\/config\.json$/,
+  ];
+
+  function isSensitivePath(absPath: string): boolean {
+    return SENSITIVE_PATTERNS.some((pattern) => pattern.test(absPath));
+  }
+
+  app.get('/api/download', async (req, reply) => {
+    const { path: filePath, sessionId } = req.query as { path?: string; sessionId?: string };
+
+    if (!filePath) {
+      reply.code(400).send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Missing path parameter'));
+      return;
+    }
+
+    if (!sessionId) {
+      reply.code(400).send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Missing sessionId parameter'));
+      return;
+    }
+
+    const session = findSessionOrFail(ctx, sessionId);
+    const validated = validateSessionFilePath(session.workingDir, filePath);
+    if (!validated) {
+      reply.code(404).send(createErrorResponse(ApiErrorCode.NOT_FOUND, 'File not found'));
+      return;
+    }
+    const { resolvedPath } = validated;
+
+    // Check sensitive path blocklist
+    if (isSensitivePath(resolvedPath)) {
+      reply.code(403).send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Access to this file is blocked'));
+      return;
+    }
+
+    try {
+      const stat = await fs.stat(resolvedPath);
+
+      if (!stat.isFile()) {
+        reply.code(400).send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Path is not a file'));
+        return;
+      }
+
+      // 50MB size limit
+      const MAX_DOWNLOAD_SIZE = 50 * 1024 * 1024;
+      if (stat.size > MAX_DOWNLOAD_SIZE) {
+        reply
+          .code(400)
+          .send(
+            createErrorResponse(
+              ApiErrorCode.INVALID_INPUT,
+              `File too large (${Math.round(stat.size / 1024 / 1024)}MB > 50MB limit)`
+            )
+          );
+        return;
+      }
+
+      const ext = filePath.split('.').pop()?.toLowerCase() || '';
+      const mimeTypes: Record<string, string> = {
+        png: 'image/png',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        gif: 'image/gif',
+        webp: 'image/webp',
+        svg: 'image/svg+xml',
+        pdf: 'application/pdf',
+        json: 'application/json',
+        txt: 'text/plain',
+        md: 'text/markdown',
+        csv: 'text/csv',
+        xml: 'application/xml',
+        zip: 'application/zip',
+        gz: 'application/gzip',
+        tar: 'application/x-tar',
+      };
+
+      const filename = pathBasename(resolvedPath);
+      const content = await fs.readFile(resolvedPath);
+      // Bypass Fastify compression — write directly to raw response
+      reply.raw.writeHead(200, {
+        'Content-Type': mimeTypes[ext] || 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length': content.length,
+      });
+      reply.raw.end(content);
+      return;
+    } catch (err) {
+      reply
+        .code(500)
+        .send(createErrorResponse(ApiErrorCode.OPERATION_FAILED, `Failed to read file: ${getErrorMessage(err)}`));
+    }
   });
 }
