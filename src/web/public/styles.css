@@ -3728,7 +3728,10 @@ body.solo-mode .btn-lifecycle-log {
 /* Settings Grid Layout - 2 column compact view */
 .settings-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, 1fr) lets tracks shrink below their min-content so long
+     labels ellipsis-truncate instead of blowing out the modal width and
+     forcing a horizontal scrollbar (1fr === minmax(auto, 1fr) would not). */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.5rem 1rem;
 }
 
@@ -3794,7 +3797,7 @@ body.solo-mode .btn-lifecycle-log {
 
 /* Three column variant for notification levels */
 .settings-grid-3col {
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
 }
 
 /* Inline input in settings item */
@@ -3963,6 +3966,12 @@ body.solo-mode .btn-lifecycle-log {
   overflow-y: auto;
   flex: 1;
   min-height: 0;
+}
+
+/* App Settings packs a 2-column toggle grid; give it room so right-column
+   switches aren't cramped against the edge (other modal-lg modals stay 540). */
+#appSettingsModal .modal-content.modal-lg {
+  max-width: 600px;
 }
 
 /* Mobile Case Picker - Base Styles */
