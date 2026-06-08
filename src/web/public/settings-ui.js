@@ -313,11 +313,12 @@ Object.assign(CodemanApp.prototype, {
     document.getElementById('appSettingsShowFileBrowser').checked = settings.showFileBrowser ?? defaults.showFileBrowser ?? false;
     document.getElementById('appSettingsShowSubagents').checked = settings.showSubagents ?? defaults.showSubagents ?? false;
     document.getElementById('appSettingsShowMultiMonitorButton').checked = settings.showMultiMonitorButton ?? defaults.showMultiMonitorButton ?? false;
-    // Input section: gesture control is only available when the instance runs with
-    // CODEMAN_GESTURE=1 (server sets window.__codemanGestureAvailable). Hide the
-    // whole section otherwise so the toggle can't promise something that won't work.
-    const inputSection = document.getElementById('appSettingsInputSection');
-    if (inputSection) inputSection.style.display = window.__codemanGestureAvailable ? '' : 'none';
+    // Gesture control lives in the Input section (alongside Local Echo / CJK Input)
+    // but is only available when the instance runs with CODEMAN_GESTURE=1 (server sets
+    // window.__codemanGestureAvailable). Hide just this item otherwise so the toggle
+    // can't promise something that won't work.
+    const gestureItem = document.getElementById('appSettingsGestureControlItem');
+    if (gestureItem) gestureItem.style.display = window.__codemanGestureAvailable ? '' : 'none';
     document.getElementById('appSettingsGestureControl').checked = settings.gestureControlEnabled ?? defaults.gestureControlEnabled ?? false;
     document.getElementById('appSettingsSubagentTracking').checked = settings.subagentTrackingEnabled ?? defaults.subagentTrackingEnabled ?? true;
     document.getElementById('appSettingsSubagentActiveTabOnly').checked = settings.subagentActiveTabOnly ?? defaults.subagentActiveTabOnly ?? true;

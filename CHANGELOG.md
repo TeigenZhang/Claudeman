@@ -1,5 +1,19 @@
 # aicodeman
 
+## 0.8.2
+
+### Patch Changes
+
+- Session detach/undock, opt-in gesture-control overlay, multi-monitor spanning, new App-Settings toggles, and asset cache-busting.
+  - **Session detach/undock + instance isolation (#103):** Detach a session into its own solo (popup) window from the tab strip. Adds multi-instance isolation primitives in `src/config/instance.ts` (`getDataDir()`/`dataPath()`/`DEFAULT_TMUX_SOCKET`) keyed off `CODEMAN_INSTANCE`, so a beta can run side-by-side with prod without discovering/attaching to prod's live tmux sessions or clobbering its `state.json`. `CODEMAN_INSTANCE` defaults to the production layout (`~/.codeman`, `-L codeman`, port 3000), so master installs are unaffected. Adds `scripts/run-beta.sh` (`CODEMAN_INSTANCE=beta` + `CODEMAN_PORT=5000`). The legacy `~/.claudeman` migration is now scoped to the default instance only. Hardened detach edge cases. Tests: `test/config/instance.test.ts`.
+  - **Gesture-control overlay (Phase 5, opt-in via `CODEMAN_GESTURE=1`):** Camera hand-tracking overlay (self-hosted MediaPipe — wasm + model fetched at install/build via `scripts/fetch-gesture-assets.mjs` rather than committed). `CODEMAN_GESTURE=1` makes the feature _available_ (CSP widening + `/gesture/` assets + `window.__codemanGestureAvailable`); the per-user **Gesture Control (beta)** toggle (App Settings → Display → Input, default OFF) is the actual on/off and reloads the page to inject/remove the bundle. Dashboard-only (not solo popups). Labeled "(beta)" (#109).
+  - **Multi-monitor button:** Header button (opt-in via App Settings → Display → Header Displays) that POSTs `/api/system/span-displays` to spawn `scripts/span-codeman.sh` — a maximized browser `--app` window sized to the union of all displays, so the gesture layer's floating panels can drag across the physical monitor seam. Tests: `test/routes/system-span-displays.test.ts`.
+  - **New App-Settings toggles (#105):** Gesture control and the multi-monitor button are both opt-in (default OFF), with live show/hide on save.
+  - **Asset cache-busting:** `renderIndexHtml` appends `?v=<mtime>` to every same-origin `.js`/`.css` reference; `index.html` is served `no-cache`, so a normal reload picks up edited modules/styles without a hard refresh. Tests: `test/render-index-html.test.ts`.
+  - **Gesture Control toggle placement:** the toggle now lives inside the existing **Input** settings section (alongside Local Echo / CJK Input / Extended Keyboard Bar) instead of a duplicate "Input" section; only the toggle itself is hidden when `CODEMAN_GESTURE=1` is unset, leaving the rest of the section intact.
+  - **Service env:** `scripts/codeman-web.service` now sets `CODEMAN_GESTURE=1` so the gesture feature is available on the local install (still gated behind the default-OFF per-user toggle).
+  - **Docs:** CLAUDE.md updated for the orchestrator loop, multi-monitor/span-displays, cache-busting, gesture/multi-monitor toggles, and structural-count fixes.
+
 ## 0.8.1
 
 ### Patch Changes

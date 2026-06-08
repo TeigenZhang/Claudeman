@@ -56,7 +56,7 @@ When user says "COM":
 
 CI runs `npm run check:lockfile` on every push/PR, so lockfile drift fails the build even if the `version-packages` script is bypassed.
 
-**Version**: 0.8.1 (must match `package.json`)
+**Version**: 0.8.2 (must match `package.json`)
 
 ## Project Overview
 
@@ -122,14 +122,14 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 | **Infra** | `src/hooks-config.ts`, `src/push-store.ts`, `src/tunnel-manager.ts`, `src/image-watcher.ts`, `src/file-stream-manager.ts` | |
 | **Plan** | `src/plan-orchestrator.ts`, `src/prompts/*.ts`, `src/templates/claude-md.ts` | |
 | **Web** | `src/web/server.ts`, `src/web/sse-events.ts`, `src/web/routes/*.ts` (15 route modules + barrel), `src/web/route-helpers.ts`, `src/web/ports/*.ts`, `src/web/middleware/auth.ts`, `src/web/schemas.ts` | |
-| **Frontend** | `src/web/public/app.js` (~3.1K lines, core) + 5 infra modules (`constants.js`, `mobile-handlers.js`, `voice-input.js`, `notification-manager.js`, `keyboard-accessory.js`) + 7 domain modules (`terminal-ui.js`, `respawn-ui.js`, `ralph-panel.js`, `orchestrator-panel.js`, `settings-ui.js`, `panels-ui.js`, `session-ui.js`) + 5 feature modules (`ralph-wizard.js`, `api-client.js`, `subagent-windows.js`, `input-cjk.js`, `image-input.js`) + `sw.js` | |
+| **Frontend** | `src/web/public/app.js` (~3.4K lines, core) + 5 infra modules (`constants.js`, `mobile-handlers.js`, `voice-input.js`, `notification-manager.js`, `keyboard-accessory.js`) + 7 domain modules (`terminal-ui.js`, `respawn-ui.js`, `ralph-panel.js`, `orchestrator-panel.js`, `settings-ui.js`, `panels-ui.js`, `session-ui.js`) + 5 feature modules (`ralph-wizard.js`, `api-client.js`, `subagent-windows.js`, `input-cjk.js`, `image-input.js`) + `sw.js` | |
 | **Types** | `src/types/index.ts` (barrel) → 14 domain files; also `src/types.ts` root re-export | See `@fileoverview` in index.ts |
 
 ★ = Large file (>50KB). All files have `@fileoverview` JSDoc — read that before diving in. Discovery aid: `grep -l '@fileoverview' src/web/routes/*.ts` lists all route modules; same grep works for `src/types/`, `src/web/public/*.js`.
 
 **Local package**: `packages/xterm-zerolag-input/` — local echo overlay for xterm.js; copy embedded in `app.js`.
 
-**Config**: `src/config/` — 9 files. Import from specific files, not barrel.
+**Config**: `src/config/` — 10 files. Import from specific files, not barrel.
 
 **Utilities**: `src/utils/` — re-exported via index. Key: `CleanupManager`, `LRUMap`, `StaleExpirationMap`, `BufferAccumulator`, `stripAnsi`, `Debouncer`, `KeyedDebouncer`. Also: `claude-cli-resolver`/`opencode-cli-resolver` (CLI path resolution), `string-similarity` (fuzzy matching), `regex-patterns` (ANSI/token/spinner patterns), `assertNever` (exhaustive checks), `token-validation` (auth tokens), `nice-wrapper` (process priority).
 
@@ -145,6 +145,8 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 **Input**: `session.writeViaMux()` for programmatic input — tmux `send-keys -l` (literal) + `send-keys Enter`. Single-line only.
 
 **Idle detection**: Multi-layer (completion message → AI check → output silence → token stability). See `docs/respawn-state-machine.md`.
+
+**Orchestrator**: State machine that turns a user goal into a phased plan and drives it to completion: `idle → planning → approval → executing → verifying → (replanning) → completed/failed`. `OrchestratorLoop` (engine) delegates plan generation to `orchestrator-planner` and per-phase verification gates to `orchestrator-verifier`, executing phases via team agents/`task-queue`. State persists under the `orchestrator` key in `state.json`. Distinct from Ralph (single-session autonomous loop) — orchestrator coordinates multi-phase, multi-agent execution. See `docs/orchestrator-loop-architecture.md`.
 
 **Hook events**: Claude Code hooks trigger via `/api/hook-event`. Key events: `permission_prompt`, `elicitation_dialog`, `idle_prompt`, `stop`, `teammate_idle`, `task_completed`. See `src/hooks-config.ts`.
 
