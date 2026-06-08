@@ -1474,11 +1474,12 @@ Object.assign(CodemanApp.prototype, {
 
     // Multi-monitor button — hidden by default (App Settings → Display → "Header
     // Displays"). The server renders the correct initial state on every reload;
-    // this handles a live toggle from a settings save (no reload).
+    // this handles a live toggle from a settings save (no reload). Toggle the
+    // marker class (matches the server-side reveal) rather than an inline style.
     const showMultiMonitorButton = settings.showMultiMonitorButton ?? defaults.showMultiMonitorButton ?? false;
     const multiMonitorBtn = document.querySelector('.btn-multimonitor');
     if (multiMonitorBtn) {
-      multiMonitorBtn.style.display = showMultiMonitorButton ? '' : 'none';
+      multiMonitorBtn.classList.toggle('btn-multimonitor--hidden', !showMultiMonitorButton);
     }
 
     // Notification bell is retired (notifications live in Settings → Notifications

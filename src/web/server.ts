@@ -1011,15 +1011,17 @@ export class WebServer extends EventEmitter {
     html = this.cacheBustAssets(html);
     // Per-user App-Settings flags, read server-side so the page renders in the
     // right initial state on every normal reload (the client apply* functions
-    // only run on save). Skipped for solo popups (their header differs).
-    const settings: Record<string, unknown> = soloSessionId ? {} : await this.readSettings();
-    // Multi-monitor header button: hidden in the template by default
-    // (App Settings → Display → "Header Displays"); reveal when the user enabled it.
+    // only run on save). Read FRESH (bypass the 2s cache): a setting toggled
+    // moments ago triggers a reload here, and the cached value would render the
+    // pre-toggle state (e.g. the gesture bundle wouldn't inject until a 2nd
+    // reload). Skipped for solo popups (their header differs).
+    const settings: Record<string, unknown> = soloSessionId ? {} : await this.readSettings(true);
+    // Multi-monitor header button: carries the `btn-multimonitor--hidden` class
+    // in the template by default (App Settings → Display → "Header Displays");
+    // reveal by stripping that class when the user enabled it. Matching a unique
+    // class token (not user-facing copy) keeps this robust against template edits.
     if (settings.showMultiMonitorButton === true) {
-      html = html.replace(
-        'aria-label="Open Codeman across all displays" style="display:none;">',
-        'aria-label="Open Codeman across all displays">'
-      );
+      html = html.replace(' btn-multimonitor--hidden', '');
     }
     // Detached single-session ("solo") window: inject the target session id so
     // the client can enter solo mode even if a (network-first) service worker
@@ -1204,10 +1206,13 @@ export class WebServer extends EventEmitter {
 
   // Read ~/.codeman/settings.json once and return the parsed object.
   // Cached for 2s to avoid redundant reads during session creation bursts.
+  // The settings PUT route writes the file without invalidating this cache, so
+  // callers that must observe a just-saved value (e.g. renderIndexHtml on a
+  // post-save reload) pass forceFresh=true to bypass the cache.
   private _settingsCache: { data: Record<string, unknown>; ts: number } | null = null;
-  private async readSettings(): Promise<Record<string, unknown>> {
+  private async readSettings(forceFresh = false): Promise<Record<string, unknown>> {
     const now = Date.now();
-    if (this._settingsCache && now - this._settingsCache.ts < 2000) {
+    if (!forceFresh && this._settingsCache && now - this._settingsCache.ts < 2000) {
       return this._settingsCache.data;
     }
     const settingsPath = dataPath('settings.json');
