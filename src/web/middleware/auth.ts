@@ -8,7 +8,7 @@
  * - CORS (localhost only)
  */
 
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { StaleExpirationMap } from '../../utils/index.js';
 import type { AuthSessionRecord } from '../ports/auth-port.js';
@@ -69,6 +69,13 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
   const authSessions = state.authSessions;
   const authFailures = state.authFailures;
 
+  function sendAuthRateLimit(reply: FastifyReply, clientIp: string): void {
+    const remainingMs = authFailures.getRemainingTtl(clientIp) ?? AUTH_FAILURE_WINDOW_MS;
+    const retryAfterSeconds = Math.max(1, Math.ceil(remainingMs / 1000));
+    reply.header('Retry-After', String(retryAfterSeconds));
+    reply.code(429).send('Too Many Requests — try again later');
+  }
+
   app.addHook('onRequest', (req, reply, done) => {
     // Hook events come from local Claude Code hooks (curl from localhost) — no auth headers available.
     // Safe: validated by HookEventSchema, only triggers broadcasts.
@@ -89,13 +96,6 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
     }
 
     const clientIp = req.ip;
-
-    // Rate limit: reject if too many failed attempts from this IP
-    const failures = authFailures.get(clientIp) ?? 0;
-    if (failures >= AUTH_FAILURE_MAX) {
-      reply.code(429).send('Too Many Requests — try again later');
-      return;
-    }
 
     // Check session cookie first (avoids re-sending credentials on every request)
     // Use get() instead of has() so refreshOnGet extends the TTL on active sessions
@@ -140,6 +140,13 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
       return;
     }
 
+    // Rate limit only requests that failed to authenticate on this attempt.
+    const failures = authFailures.get(clientIp) ?? 0;
+    if (failures >= AUTH_FAILURE_MAX) {
+      sendAuthRateLimit(reply, clientIp);
+      return;
+    }
+
     // Auth failed — track failure count
     authFailures.set(clientIp, failures + 1);
 
@@ -154,13 +161,24 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
  * Register security headers and CORS middleware on every response.
  */
 export function registerSecurityHeaders(app: FastifyInstance, https: boolean): void {
+  // Gesture-control overlay (opt-in via CODEMAN_GESTURE=1) runs MediaPipe, which
+  // needs WebAssembly eval (script-src) and blob workers (worker-src). Its wasm
+  // runtime + model are self-hosted under /gesture/ (same-origin, covered by
+  // 'self'), so no CDN connect-src entries are needed. OFF by default so the
+  // production CSP is byte-for-byte unchanged.
+  const gesture = process.env.CODEMAN_GESTURE === '1';
+  const scriptSrc =
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net" + (gesture ? " 'wasm-unsafe-eval'" : '');
+  const connectSrc = "connect-src 'self' wss://api.deepgram.com";
+  const workerSrc = gesture ? "; worker-src 'self' blob:" : '';
+  const csp =
+    `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; ` +
+    `img-src 'self' data: blob:; ${connectSrc}; font-src 'self' https://cdn.jsdelivr.net; frame-ancestors 'self'${workerSrc}`;
+
   app.addHook('onRequest', (req, reply, done) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'SAMEORIGIN');
-    reply.header(
-      'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' wss://api.deepgram.com; font-src 'self' https://cdn.jsdelivr.net; frame-ancestors 'self'"
-    );
+    reply.header('Content-Security-Policy', csp);
     if (https) {
       reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     }
