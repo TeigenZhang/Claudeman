@@ -199,7 +199,7 @@ Frontend JS modules have `@fileoverview` with `@dependency`/`@loadorder` tags. L
 
 ### API Routes
 
-~130 handlers across 15 route files in `src/web/routes/`: system (37, incl. `POST /api/system/span-displays` → spawns `scripts/span-codeman.sh`), sessions (28), orchestrator (10), cases (9), ralph (9), plan (8), respawn (7), files (5), mux (5), push (4), scheduled (4), teams (2), hooks (1), clipboard (1), ws (1 WebSocket). Each file has `@fileoverview` with endpoint details.
+~130 handlers across 15 route files in `src/web/routes/`: system (37, incl. `POST /api/system/span-displays` → spawns `scripts/span-codeman.sh`), sessions (28), orchestrator (10), cases (9), ralph (9), plan (8), respawn (7), files (6), mux (5), push (4), scheduled (4), teams (2), hooks (1), clipboard (1), ws (1 WebSocket). Each file has `@fileoverview` with endpoint details.
 
 ## Adding Features
 
