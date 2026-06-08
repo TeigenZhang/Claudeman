@@ -30,7 +30,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 2. **Frontend changes**: Use Playwright to load the page and assert the UI renders correctly. Use `waitUntil: 'domcontentloaded'` (not `networkidle` — SSE keeps the connection open). Wait 3-4s for polling/async data to populate, then check element visibility, text content, and CSS values
 3. **Only after verification passes**, proceed with COM
 
-The production server caches static files for 1 year (`maxAge: '1y'` in `server.ts`). After deploying frontend changes, users may need a hard refresh (Ctrl+Shift+R) to see updates.
+The production server caches static files for 1 year, `immutable` (`maxAge: '1y'` in `server.ts`). To avoid stale frontend after a deploy, `renderIndexHtml` runs `cacheBustAssets(html)` — it appends `?v=<mtime>` to **every same-origin `.js`/`.css`** reference (re-stat'd per render; external/already-versioned/missing refs untouched). Because `index.html` is served `no-cache`, a **normal reload now picks up edited modules/styles — no hard refresh needed** (the gesture bundle is injected separately with its own `?v=`). If you add an asset referenced by an *absolute* URL or from JS rather than a `<script>/<link>` tag, it won't be auto-busted.
 
 ## COM Shorthand (Deployment)
 
@@ -159,6 +159,8 @@ Frontend JS modules have `@fileoverview` with `@dependency`/`@loadorder` tags. L
 
 **Z-index layers**: subagent windows (1000), plan agents (1100), log viewers (2000), image popups (3000), local echo overlay (7).
 
+**Multi-monitor button** (header, top-right; replaces the notification bell, which is hidden by default but still reachable via Settings → Notifications). `app.launchMultiMonitor()` (in `panels-ui.js`) POSTs `/api/system/span-displays`, which spawns `scripts/span-codeman.sh` — a fresh, maximized browser `--app` window sized to the union of all displays (macOS; needs "Displays have separate Spaces" OFF). Supports the gesture layer's in-page floating session panels dragging across the physical monitor seam.
+
 **Respawn presets**: `solo-work` (3s/60min), `subagent-workflow` (45s/240min), `team-lead` (90s/480min), `ralph-todo` (8s/480min), `overnight-autonomous` (10s/480min).
 
 **Keyboard shortcuts**: Escape (close), Ctrl+? (help), Ctrl+W (kill), Ctrl+Tab (next), Alt+1-9 (switch tab), Ctrl+Shift+{/} (move tab left/right), Shift+Enter (newline), Ctrl+L (clear), Ctrl+Shift+R (restore size), Ctrl+Shift+V (voice input), Ctrl/Cmd +/- (font).
@@ -182,7 +184,7 @@ Frontend JS modules have `@fileoverview` with `@dependency`/`@loadorder` tags. L
 
 ### API Routes
 
-~130 handlers across 15 route files in `src/web/routes/`: system (36), sessions (28), orchestrator (10), cases (9), ralph (9), plan (8), respawn (7), files (5), mux (5), push (4), scheduled (4), teams (2), hooks (1), clipboard (1), ws (1 WebSocket). Each file has `@fileoverview` with endpoint details.
+~130 handlers across 15 route files in `src/web/routes/`: system (37, incl. `POST /api/system/span-displays` → spawns `scripts/span-codeman.sh`), sessions (28), orchestrator (10), cases (9), ralph (9), plan (8), respawn (7), files (5), mux (5), push (4), scheduled (4), teams (2), hooks (1), clipboard (1), ws (1 WebSocket). Each file has `@fileoverview` with endpoint details.
 
 ## Adding Features
 
