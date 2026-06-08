@@ -268,7 +268,13 @@ export function registerSystemRoutes(
     if (process.platform !== 'darwin') {
       return reply
         .code(400)
-        .send(createErrorResponse(ApiErrorCode.INVALID_INPUT, 'Multi-monitor spanning is only supported on macOS.'));
+        .send(
+          createErrorResponse(
+            ApiErrorCode.INVALID_INPUT,
+            'Multi-monitor spanning runs on the Codeman server, which is not macOS. ' +
+              'If your monitors are on a remote Mac, run scripts/span-codeman.sh locally on that Mac with this server URL — see the script header for details.'
+          )
+        );
     }
     // Resolve the bundled launcher relative to this module (works from src/ and dist/).
     const scriptPath = join(dirname(fileURLToPath(import.meta.url)), '../../../scripts/span-codeman.sh');

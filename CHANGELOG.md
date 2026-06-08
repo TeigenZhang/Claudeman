@@ -1,5 +1,14 @@
 # aicodeman
 
+## 0.9.1
+
+### Patch Changes
+
+- Multi-monitor & settings UX fixes.
+  - **Multi-monitor button (remote servers):** the "span displays" button spawns `scripts/span-codeman.sh` server-side, so on a non-macOS Codeman server it can't open a window on your machine. The non-macOS API error now explains this and points to running the script locally on your Mac with the remote server URL; the script header documents the same remote-client workflow.
+  - **App Settings modal:** stop the modal overflowing horizontally on narrow viewports.
+  - **systemd:** sync the `codeman-web.service` template with the deployed unit.
+
 ## 0.9.0
 
 ### Minor Changes

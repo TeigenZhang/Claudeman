@@ -16,6 +16,18 @@
 # per-display and will NOT span. We size a windowed app to the union of all
 # displays instead. macOS only.
 #
+# ── REMOTE CLIENT (Codeman server on another machine) ────────────────────────
+# The header "multi-monitor" button spawns this script SERVER-SIDE, so it opens
+# the window on the SERVER's displays and is gated to a macOS server. If your
+# Codeman runs elsewhere (e.g. a headless Linux box reached over Tailscale) and
+# YOUR monitors are on a Mac, the button can't help — the server can't open a
+# window on your machine. Instead, run this script LOCALLY on the Mac and pass
+# the remote URL as the argument:
+#   ./span-codeman.sh "https://your-codeman.example.ts.net"
+# The osascript/browser launch all happen on the Mac; only the page is served
+# remotely, so the spanning window lands on your monitors. The "separate Spaces"
+# prerequisite above still applies on the Mac.
+#
 set -euo pipefail
 
 URL="${1:-http://localhost:5000}"
