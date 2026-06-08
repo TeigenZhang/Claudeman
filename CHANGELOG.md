@@ -1,5 +1,36 @@
 # aicodeman
 
+## 0.9.0
+
+### Minor Changes
+
+- Security hardening release: network-bind policy, auth lockout recovery, download/SVG hardening, dependency & supply-chain fixes, tmux launch reliability, and a full security-architecture doc.
+
+  **Network binding (COD-29, #107):**
+  - The web server now defaults to binding `127.0.0.1` (loopback) instead of `0.0.0.0`, so a fresh install is reachable only from the same machine and needs no password. New `--host` / `-H` / `CODEMAN_HOST` flag to choose the bind host.
+  - Binding a non-loopback host **without** `CODEMAN_PASSWORD` no longer refuses to start — it **starts and prints a loud warning** with the three ways to secure it (set `CODEMAN_PASSWORD`, bind loopback + an authenticated tunnel / `tailscale serve`, or acknowledge with `--allow-unauthenticated-network` / `CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK=1`). This keeps Codeman "just working" for new users while making remote exposure a guided, explicit choice. Host classification lives in the new `src/web/network-auth-policy.ts` (handles `127.0.0.0/8`, `::1`, `::ffff:127.*`, bracketed IPv6).
+  - A post-install security note now explains the loopback default and how to expose safely.
+
+  **Authentication (COD-29, #107):**
+  - Auth lockout now recovers gracefully: the per-IP rate-limit (`429`) check runs **after** the cookie/credential checks, so a valid session cookie or correct password is never locked out by a prior attacker's failures from the same IP (important behind a shared-IP tunnel). Wrong credentials are still counted and still hit the limit, and a `Retry-After` header is returned.
+
+  **Downloads & content-type hardening (COD-29, #107):**
+  - New session-scoped `POST /api/download` route: realpath-bounded to the session working dir, a sensitive-path blocklist (`/etc/shadow`, `~/.ssh/`, `.env`, `*credentials*`, …), `isFile()` + 50 MB cap, forced `attachment`.
+  - Workspace `.svg` files are served as `application/octet-stream` + `attachment` + `nosniff` (closes a stored-XSS-via-SVG vector); `nosniff` now applies to all `file-raw` responses.
+
+  **Dependencies & supply chain (COD-28, #106):**
+  - Bumped security-sensitive deps to patched versions (`@fastify/static` 9, `fastify` 5.8, `uuid` 14, `vitest` 4.1, …) and added `overrides` for patched transitives (`picomatch`, `basic-ftp`, `fast-uri`, `flatted`); `npm audit` goes from 7 advisories to 0.
+  - New `npm run check:public-assets` (`scripts/check-public-assets.mjs`): scans `src/web/public/**` for literal NUL bytes and runs `node --check` on every `.js` file, plus a Prettier pass on maintained files. Removed literal NUL placeholders from `app.js`. Added `test/dependency-security.test.ts` and `test/frontend-public-tooling.test.ts`.
+
+  **tmux launch reliability (COD-31, #110):**
+  - New tmux sessions and respawns launch from a stable `/tmp` and `cd` into the workspace inside the pane, avoiding `new-session` crashes when a FUSE/rclone-mounted workspace has a transient mount blip at launch. The `cd "<dir>" && <cmd>` form is fail-safe (the CLI never runs in `/tmp`) and the path is validated + double-quoted.
+
+  **Test stability (COD-30, #108):**
+  - Cleared leaked auth env in the Vitest setup, corrected stale route status-code / SSE-lifecycle expectations to match shipped behavior, updated the mobile keyboard accessory expectations, and measured DOMContentLoaded via browser navigation timing. Also fixed the `WebServer` title tests for the new `host` constructor arg + async `renderIndexHtml`.
+
+  **Docs:**
+  - New `docs/security-architecture.md` documenting the full model (network binding, auth pipeline, the tunnel `req.ip` caveat, file-serving hardening, supply-chain, multi-instance isolation, security headers, and recommended secure setups). CLAUDE.md updated accordingly.
+
 ## 0.8.2
 
 ### Patch Changes

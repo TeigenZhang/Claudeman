@@ -56,7 +56,7 @@ When user says "COM":
 
 CI runs `npm run check:lockfile` on every push/PR, so lockfile drift fails the build even if the `version-packages` script is bypassed.
 
-**Version**: 0.8.2 (must match `package.json`)
+**Version**: 0.9.0 (must match `package.json`)
 
 ## Project Overview
 
@@ -78,7 +78,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 |------|---------|
 | Dev with TLS | `npx tsx src/index.ts web --https` |
 | Override window title hostname | `npx tsx src/index.ts web --title-hostname <name>` (default: `os.hostname()` — `codeman:<name>` is used for tab title, title-flash, and OS desktop notification prefix) |
-| Bind a non-loopback host | `npx tsx src/index.ts web --host 0.0.0.0` (or `-H`; env `CODEMAN_HOST`; default `127.0.0.1`). **Requires `CODEMAN_PASSWORD`** or it refuses to start — see Common Gotchas |
+| Bind a non-loopback host | `npx tsx src/index.ts web --host 0.0.0.0` (or `-H`; env `CODEMAN_HOST`; default `127.0.0.1`). Without `CODEMAN_PASSWORD` it **starts but warns loudly** — see Common Gotchas + `docs/security-architecture.md` |
 | Continuous typecheck | `tsc --noEmit --watch` |
 | Test coverage | `npm run test:coverage` |
 | Dead-code sweep | `npm run knip` (config in `knip.json`) |
@@ -101,7 +101,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 - **Dual-CLI prefix discipline** — Codeman supports both Claude Code and OpenCode (`claude-cli-resolver.ts` / `opencode-cli-resolver.ts`); env-var prefix is CLI-specific (`CLAUDE_CODE_*` vs `OPENCODE_*`) and the allowlist in `schemas.ts` enforces this. When adding settings, decide which CLI(s) it applies to and gate the env export accordingly — don't blindly forward both prefixes. See `docs/opencode-integration.md` for the OpenCode resolver design
 - **Zod `.optional()` rejects `null`** — accepts `undefined` only. When the frontend builds a request body with `JSON.stringify`, an explicit `null` field is preserved on the wire and fails validation with `INVALID_INPUT`. Convert `null` → `undefined` before stringifying (e.g. `field: value ?? undefined`), or declare the schema `.nullish()`. Real bugs caused: 0.6.4 (`durationMinutes` for ∞ respawn), and the same shape pattern hit `opusContext1mEnabled` in 0.6.3
 - **`xterm-zerolag-input` is duplicated** — the local-echo overlay lives in BOTH `packages/xterm-zerolag-input/src/` (published to npm as a standalone library for external consumers — see README "Published Packages") AND inline inside `src/web/public/app.js` (runtime copy the web UI actually loads, since the page ships as plain JS without a bundler). Any change to overlay behavior MUST be applied to both, or dev and prod diverge — and a public API break in the package warrants a separate version bump for `xterm-zerolag-input` in the changeset. Always test on mobile after touching it. See `docs/local-echo-overlay-plan.md`.
-- **Default bind is loopback-only — non-loopback fails closed without a password** — since COD-29 (PR #107) the web server defaults to `--host 127.0.0.1` (was `0.0.0.0`). Binding any non-loopback host (`--host`/`-H`/`CODEMAN_HOST`) **throws at startup unless `CODEMAN_PASSWORD` is set** (or `--allow-unauthenticated-network` / `CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK=1` is given). The thrower is `isLoopbackBindHost()` in `server.ts`; flags are wired in `cli.ts`. ⚠️ Operational trap: the production systemd unit runs `node dist/index.js web --https` with no `--host`, so after this change it became reachable **only on localhost** — remote access (LAN/Tailscale/tunnel) silently breaks until you add `Environment=CODEMAN_HOST=0.0.0.0` + `Environment=CODEMAN_PASSWORD=…` to `~/.config/systemd/user/codeman-web.service`. A loopback-bound server is still reachable through a same-host tunnel (cloudflared → `127.0.0.1`), but NOT by a browser hitting the box's LAN/Tailscale IP. Auth user defaults to `admin`.
+- **Default bind is loopback-only; non-loopback without a password starts but warns** — since COD-29 (PR #107) the web server defaults to `--host 127.0.0.1` (was `0.0.0.0`). As of **0.9.0** binding a non-loopback host (`--host`/`-H`/`CODEMAN_HOST`) without `CODEMAN_PASSWORD` **no longer refuses to start — it starts and prints a loud warning** listing the fixes (set `CODEMAN_PASSWORD`, bind loopback + tunnel/`tailscale serve`, or `--allow-unauthenticated-network` / `CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK=1` to acknowledge → terser note). Host classification is `isLoopbackBindHost()` in `network-auth-policy.ts`; the warn-vs-start logic is in `server.ts` `start()`; flags wired in `cli.ts`. ⚠️ Operational note: the production systemd unit runs `node dist/index.js web --https` with no `--host`, so it binds **localhost only** — reach it remotely via `tailscale serve`/tunnel to `127.0.0.1`, or add `Environment=CODEMAN_HOST=0.0.0.0` + `Environment=CODEMAN_PASSWORD=…` to `~/.config/systemd/user/codeman-web.service`. A loopback bind is reachable through a same-host tunnel (cloudflared/tailscale → `127.0.0.1`) but NOT by a browser hitting the box's LAN IP. Auth user defaults to `admin`. **Full model: `docs/security-architecture.md`.**
 - **Instance isolation / multi-instance attach danger** — data dir (`~/.codeman`) and tmux socket (`tmux -L codeman`) are PROCESS-WIDE and shared by every Codeman on the machine, derived from `CODEMAN_INSTANCE` via `src/config/instance.ts` (`getDataDir()`/`dataPath()`/`DEFAULT_TMUX_SOCKET`). ⚠️ A 2nd instance on the SAME socket **discovers and attaches PTYs to the first instance's live sessions** (`tmux -L codeman attach-session …`), resizing/mutating them — `$HOME` isolation is NOT enough (tmux is system-global). To run two instances, give each a distinct `CODEMAN_INSTANCE` (scopes BOTH dir+socket: `~/.codeman-<name>` + `-L codeman-<name>`), or set `CODEMAN_TMUX_SOCKET` + `CODEMAN_DATA_DIR` individually. **`CODEMAN_INSTANCE` defaults to empty = the production layout (`~/.codeman`, `-L codeman`, port 3000)**, so this branch is safe to ship to master without disturbing existing installs. To run THIS beta alongside prod, launch with `scripts/run-beta.sh` (`CODEMAN_INSTANCE=beta` + `CODEMAN_PORT=5000`) — it never collides with prod's data dir/socket/port. Any new `~/.codeman/...` path MUST go through `dataPath()`, never `join(homedir(), '.codeman', …)`.
 
 **Import conventions**: Utils from `./utils`, types from `./types` (barrel), config from specific `./config/*` files.
@@ -175,10 +175,12 @@ Frontend JS modules have `@fileoverview` with `@dependency`/`@loadorder` tags. L
 
 ### Security
 
+**Full model: [`docs/security-architecture.md`](docs/security-architecture.md)** — network binding, auth pipeline, the tunnel caveat, file-serving hardening, supply-chain, instance isolation, and recommended secure setups.
+
 | Layer | Details |
 |-------|---------|
 | **Auth** | Optional HTTP Basic via `CODEMAN_USERNAME` (defaults to `admin`) / `CODEMAN_PASSWORD` env vars. Active only when `CODEMAN_PASSWORD` is set (`middleware/auth.ts`) |
-| **Network bind** | Defaults to `127.0.0.1` (loopback). Binding a non-loopback host (`--host`/`CODEMAN_HOST`) **fails closed** without `CODEMAN_PASSWORD` unless `--allow-unauthenticated-network` / `CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK=1`. Added by COD-29 (PR #107) — see Common Gotchas |
+| **Network bind** | Defaults to `127.0.0.1` (loopback). A non-loopback bind (`--host`/`CODEMAN_HOST`) without `CODEMAN_PASSWORD` **starts but warns loudly** (0.9.0; was fail-closed in COD-29/#107). `--allow-unauthenticated-network` / `CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK=1` acknowledges the warning. Classifier: `network-auth-policy.ts` |
 | **QR Auth** | Single-use 6-char tokens (60s TTL) for tunnel login. See `docs/qr-auth-plan.md` |
 | **Sessions** | 24h cookie (`codeman_session`), auto-extend, device context audit |
 | **Rate limit** | 10 failed auth/IP → 429 (15min decay). QR has separate limiter |

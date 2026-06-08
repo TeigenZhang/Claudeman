@@ -1659,13 +1659,6 @@ export class WebServer extends EventEmitter {
   }
 
   async start(): Promise<void> {
-    if (!isLoopbackBindHost(this.host) && !process.env.CODEMAN_PASSWORD && !this.allowUnauthenticatedNetwork) {
-      throw new Error(
-        'Refusing to start Codeman on a non-loopback host without CODEMAN_PASSWORD. ' +
-          'Set CODEMAN_PASSWORD or explicitly allow unauthenticated network access.'
-      );
-    }
-
     await this.setupRoutes();
 
     const lifecycleLog = getLifecycleLog();
@@ -1697,12 +1690,28 @@ export class WebServer extends EventEmitter {
     const displayHost = this.host === '0.0.0.0' ? 'localhost' : this.host;
     console.log(`Codeman web interface running at ${protocol}://${displayHost}:${this.port}`);
 
-    if (!isLoopbackBindHost(this.host) && !process.env.CODEMAN_PASSWORD && this.allowUnauthenticatedNetwork) {
-      console.warn('\n⚠  WARNING: No CODEMAN_PASSWORD set — server is accessible without authentication.');
-      console.warn('   Anyone on your network can access and control Claude sessions.');
-      console.warn(
-        '   This was explicitly allowed by --allow-unauthenticated-network or CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK.\n'
-      );
+    // Codeman binds loopback (127.0.0.1) by default, which is safe out of the box.
+    // If the user opts into a non-loopback bind (e.g. --host 0.0.0.0) WITHOUT a
+    // password we no longer refuse to start — that surprised people whose setups
+    // "just worked" before. Instead we start and warn loudly, pointing at the ways
+    // to secure it. --allow-unauthenticated-network just acknowledges the risk (a
+    // terser note). See docs/security-architecture.md.
+    if (!isLoopbackBindHost(this.host) && !process.env.CODEMAN_PASSWORD) {
+      if (this.allowUnauthenticatedNetwork) {
+        console.warn(
+          `\n⚠  Codeman is reachable WITHOUT a password on ${displayHost}:${this.port} ` +
+            '(explicitly allowed). Anyone who can reach it can control your Claude sessions.\n'
+        );
+      } else {
+        console.warn(`\n⚠  WARNING: Codeman is bound to a non-loopback host (${this.host}) with NO password.`);
+        console.warn(`   Anyone who can reach ${displayHost}:${this.port} can control your Claude sessions.`);
+        console.warn('   Secure it with ONE of:');
+        console.warn('     • set CODEMAN_PASSWORD=<password>   (HTTP Basic auth), or');
+        console.warn('     • bind loopback only: --host 127.0.0.1, then front it with an');
+        console.warn('       authenticated tunnel (cloudflared) or `tailscale serve`, or');
+        console.warn('     • keep this bind and accept the risk: --allow-unauthenticated-network');
+        console.warn('   See docs/security-architecture.md for details.\n');
+      }
     }
 
     // Set API URL for child processes (MCP server, spawned sessions)

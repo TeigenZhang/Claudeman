@@ -460,3 +460,16 @@ if (process.env.CI || process.env.CODEMAN_NO_AUTOSTART) {
         }
     }
 }
+
+// ----------------------------------------------------------------------------
+// Security note — printed on every install path
+// ----------------------------------------------------------------------------
+
+console.log(colors.bold('Security:'));
+console.log(colors.dim('  Codeman binds ') + colors.cyan('127.0.0.1') + colors.dim(' (this machine only) — no password needed by default.'));
+console.log(colors.dim('  To reach it from another device, do ONE of:'));
+console.log(colors.dim('    • ') + colors.cyan('tailscale serve') + colors.dim(' / ') + colors.cyan('cloudflared tunnel') + colors.dim('   (recommended), or'));
+console.log(colors.dim('    • ') + colors.cyan('codeman web --host 0.0.0.0') + colors.dim('  AND set ') + colors.cyan('CODEMAN_PASSWORD'));
+console.log(colors.dim('  A non-loopback bind without a password still starts, but warns loudly.'));
+console.log(colors.dim('  Details: docs/security-architecture.md'));
+console.log('');

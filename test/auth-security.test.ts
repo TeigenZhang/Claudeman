@@ -19,6 +19,7 @@ const AUTH_PORT = 3160;
 const NOAUTH_PORT = 3161;
 const NETWORK_OVERRIDE_PORT = 3162;
 const AUTH_RATE_LIMIT_PORT = 3220;
+const NOAUTH_NETWORK_PORT = 3221;
 const TEST_USER = 'admin';
 const TEST_PASS = 'test-password-12345';
 
@@ -361,11 +362,22 @@ describe('No-Auth Server Startup Policy', () => {
     expect(res.status).toBe(200);
   });
 
-  it('rejects non-loopback startup without a password or explicit override', async () => {
-    const networkServer = new WebServer(0, false, true, '0.0.0.0');
+  it('starts with a loud warning (not a hard failure) on a non-loopback bind without a password', async () => {
+    // Policy (0.9.0): loopback is the safe default, but opting into a non-loopback
+    // bind without a password no longer refuses to start — it starts and warns,
+    // pointing at how to secure it. See docs/security-architecture.md.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const networkServer = new WebServer(NOAUTH_NETWORK_PORT, false, true, '0.0.0.0');
 
-    await expect(networkServer.start()).rejects.toThrow(/CODEMAN_PASSWORD/);
+    await expect(networkServer.start()).resolves.toBeUndefined();
+    const res = await fetch(`http://localhost:${NOAUTH_NETWORK_PORT}/api/status`);
+    expect(res.status).toBe(200);
 
+    const warned = warnSpy.mock.calls.flat().join('\n');
+    expect(warned).toMatch(/non-loopback host|NO password/i);
+    expect(warned).toMatch(/CODEMAN_PASSWORD/);
+
+    warnSpy.mockRestore();
     await networkServer.stop();
   });
 
