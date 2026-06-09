@@ -262,15 +262,17 @@ Object.assign(CodemanApp.prototype, {
     }
 
     this._localEchoOverlay = new LocalEchoOverlay(this.terminal);
+    if (MobileDetection.isTouchDevice()) {
+      this.terminal.onCursorMove(() => this._syncMobileHelperTextareaToCursor());
+      this.terminal.onRender(() => this._syncMobileHelperTextareaToCursor());
+    }
 
     // CJK IME input — textarea in index.html, just wire up send
     this._cjkInput = null;
     if (typeof CjkInput !== 'undefined') {
       this._cjkInput = CjkInput.init({
         send: (text) => {
-          if (this.activeSessionId) {
-            this._sendInputAsync(this.activeSessionId, text);
-          }
+          this._handleCjkInput(text);
         },
       });
     }
@@ -393,7 +395,13 @@ Object.assign(CodemanApp.prototype, {
           // routes back to the terminal. Without this, a tap on the terminal area
           // consumes the touch event but xterm's textarea never regains focus.
           if (!didScroll && this.terminal) {
-            this.terminal.focus();
+            const cjkInput = document.getElementById('cjkInput');
+            if (cjkInput?.classList.contains('cjk-input-visible')) {
+              cjkInput.focus();
+            } else {
+              this._syncMobileHelperTextareaToCursor();
+              this.terminal.focus();
+            }
           }
         },
         { passive: true }
@@ -1468,10 +1476,78 @@ Object.assign(CodemanApp.prototype, {
         this._localEchoOverlay.clear();
         this._localEchoEnabled = false;
       } else {
-        // Claude Code: scan for ❯ prompt character
-        this._localEchoOverlay.setPrompt({ type: 'character', char: '\u276f', offset: 2 });
+        // Codex/Claude-style TUIs usually expose a ❯ prompt. During active
+        // redraws or compact mobile layouts that marker may not be present in
+        // the viewport, while xterm's cursor still marks the editable input
+        // position. Fall back to cursor coordinates so phone typing appears at
+        // the terminal cursor instead of disappearing into pending state.
+        this._localEchoOverlay.setPrompt({
+          type: 'custom',
+          offset: 0,
+          find: (terminal) => {
+            try {
+              const buf = terminal.buffer.active;
+              for (let row = terminal.rows - 1; row >= 0; row--) {
+                const line = buf.getLine(buf.viewportY + row);
+                if (!line) continue;
+                const text = line.translateToString(true);
+                const idx = text.lastIndexOf('\u276f');
+                if (idx >= 0) return { row, col: idx + 2 };
+              }
+              return {
+                row: Math.max(0, Math.min(terminal.rows - 1, buf.cursorY)),
+                col: Math.max(0, Math.min(terminal.cols - 1, buf.cursorX)),
+              };
+            } catch {
+              return null;
+            }
+          },
+        });
       }
     }
+  },
+
+  _handleCjkInput(text) {
+    if (!this.activeSessionId) return;
+    const sessionId = this.activeSessionId;
+    const session = this.sessions.get(sessionId);
+    const useLocalEcho = !!(this._localEchoEnabled && this._localEchoOverlay && session?.mode !== 'shell');
+    if (!useLocalEcho) {
+      this._sendInputAsync(sessionId, text);
+      return;
+    }
+
+    if (text === '\x7f') {
+      const source = this._localEchoOverlay.removeChar();
+      if (source === 'flushed') this._sendInputAsync(sessionId, text);
+      return;
+    }
+
+    if (/[\r\n]+$/.test(text)) {
+      const committed = text.replace(/[\r\n]+$/g, '');
+      if (committed) this._localEchoOverlay.appendText(committed);
+      const pending = this._localEchoOverlay.pendingText || '';
+      this._localEchoOverlay.clear();
+      this._localEchoOverlay.suppressBufferDetection();
+      this._flushedOffsets?.delete(sessionId);
+      this._flushedTexts?.delete(sessionId);
+      if (pending) this._sendInputAsync(sessionId, pending);
+      setTimeout(() => this._sendInputAsync(sessionId, '\r'), pending ? 80 : 0);
+      return;
+    }
+
+    if (text.length === 1 && text.charCodeAt(0) < 32) {
+      const pending = this._localEchoOverlay.pendingText || '';
+      this._localEchoOverlay.clear();
+      this._localEchoOverlay.suppressBufferDetection();
+      this._flushedOffsets?.delete(sessionId);
+      this._flushedTexts?.delete(sessionId);
+      if (pending) this._sendInputAsync(sessionId, pending);
+      this._sendInputAsync(sessionId, text);
+      return;
+    }
+
+    this._localEchoOverlay.appendText(text);
   },
 
   /**
@@ -1849,6 +1925,23 @@ Object.assign(CodemanApp.prototype, {
     }
   },
 
+  _syncMobileHelperTextareaToCursor() {
+    if (!MobileDetection.isTouchDevice() || !this.terminal?.element) return;
+    try {
+      const xtermEl = this.terminal.element;
+      const cursor = this.terminal.element.querySelector('.xterm-cursor');
+      const screen = this.terminal.element.querySelector('.xterm-screen');
+      if (!(xtermEl instanceof HTMLElement) || !(cursor instanceof HTMLElement) || !(screen instanceof HTMLElement)) return;
+      const cursorRect = cursor.getBoundingClientRect();
+      const screenRect = screen.getBoundingClientRect();
+      if (!cursorRect.width && !cursorRect.height) return;
+      const left = Math.max(0, Math.round(cursorRect.left - screenRect.left));
+      const top = Math.max(0, Math.round(cursorRect.top - screenRect.top));
+      xtermEl.style.setProperty('--xterm-helper-left', `${left}px`);
+      xtermEl.style.setProperty('--xterm-helper-top', `${top}px`);
+    } catch {}
+  },
+
   increaseFontSize() {
     const current = this.terminal.options.fontSize || 14;
     this.setFontSize(Math.min(current + 2, 24));
@@ -1917,10 +2010,18 @@ Object.assign(CodemanApp.prototype, {
     // clear the terminal for the same dimensions (which would blank the screen
     // without a subsequent Ink redraw to repaint it).
     this._lastResizeDims = { cols: dims.cols, rows: dims.rows };
+    const viewportType =
+      typeof MobileDetection !== 'undefined' && MobileDetection.getDeviceType
+        ? MobileDetection.getDeviceType()
+        : window.innerWidth < 430
+          ? 'mobile'
+          : window.innerWidth < 768
+            ? 'tablet'
+            : 'desktop';
     // Fast path: WebSocket resize
     if (!options.forceHttp && this._wsReady && this._wsSessionId === sessionId) {
       try {
-        this._ws.send(JSON.stringify({ t: 'z', c: dims.cols, r: dims.rows }));
+        this._ws.send(JSON.stringify({ t: 'z', c: dims.cols, r: dims.rows, v: viewportType }));
         return changed;
       } catch {
         // Fall through to HTTP POST
@@ -1929,7 +2030,7 @@ Object.assign(CodemanApp.prototype, {
     await fetch(`/api/sessions/${sessionId}/resize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(dims),
+      body: JSON.stringify({ ...dims, viewportType }),
     });
     return changed;
   },

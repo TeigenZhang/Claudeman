@@ -576,6 +576,7 @@ class CodemanApp {
     // Apply keyboard bar mode from settings
     const _kbSettings = this.loadAppSettingsFromStorage();
     if (_kbSettings.extendedKeyboardBar) KeyboardAccessoryBar.setMode('extended');
+    this.bindMobileHeaderUtilityToggle?.();
     this.applyHeaderVisibilitySettings();
     this.applyTabWrapSettings();
     this.applyMonitorVisibility();
@@ -2026,9 +2027,20 @@ class CodemanApp {
     const cjkEl = document.getElementById('cjkInput');
     if (!cjkEl) return;
     const settings = this.loadAppSettingsFromStorage();
-    const showCjk = this._serverCjkOverride || settings.cjkInputEnabled || false;
+    const defaults = this.getDefaultSettings?.() || {};
+    const isTouchTerminal =
+      typeof MobileDetection !== 'undefined' &&
+      MobileDetection.isTouchDevice() &&
+      (MobileDetection.isSmallScreen() || MobileDetection.isMediumScreen());
+    const showCjk =
+      this._serverCjkOverride || (!isTouchTerminal && (settings.cjkInputEnabled ?? defaults.cjkInputEnabled ?? false));
+    cjkEl.classList.toggle('cjk-input-visible', !!showCjk);
+    document.body.classList.toggle('cjk-input-visible', !!showCjk);
     cjkEl.style.display = showCjk ? 'block' : 'none';
+    cjkEl.setAttribute('aria-hidden', showCjk ? 'false' : 'true');
+    if (showCjk && cjkEl.value === '\u200B') cjkEl.value = '';
     if (!showCjk) window.cjkActive = false;
+    if (typeof KeyboardHandler !== 'undefined') KeyboardHandler.updateLayoutForKeyboard();
   }
 
   /**
@@ -2078,6 +2090,7 @@ class CodemanApp {
     KeyboardHandler.cleanup();
     MobileDetection.init();
     KeyboardHandler.init();
+    this.bindMobileHeaderUtilityToggle?.();
     // Clear tab alerts
     this.tabAlerts.clear();
     // Clear shown completions (used for duplicate notification prevention)
@@ -2550,7 +2563,7 @@ class CodemanApp {
       const tallTabsEnabled = this._tallTabsEnabled ?? false;
       const showFolder = tallTabsEnabled && session.name && folderName && folderName !== name;
 
-      parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}${loadState ? ' tab-loading' : ''}" data-id="${id}" data-color="${color}" ${loadState ? `data-load-phase="${escapeHtml(loadState.phase)}"` : ''} onclick="app.selectSession('${escapeHtml(id)}', { forceReload: true })" oncontextmenu="event.preventDefault(); app.startInlineRename('${escapeHtml(id)}')" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-busy="${loadState ? 'true' : 'false'}" aria-label="${escapeHtml(name)} session" ${session.workingDir ? `title="${escapeHtml(session.workingDir)}"` : ''}>
+      parts.push(`<div class="session-tab ${isActive ? 'active' : ''}${alertClass}${loadState ? ' tab-loading' : ''}" data-id="${id}" data-color="${color}" ${loadState ? `data-load-phase="${escapeHtml(loadState.phase)}"` : ''} onclick="app.handleSessionTabClick(event, '${escapeHtml(id)}')" oncontextmenu="event.preventDefault(); app.startInlineRename('${escapeHtml(id)}')" tabindex="0" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-busy="${loadState ? 'true' : 'false'}" aria-label="${escapeHtml(name)} session" ${session.workingDir ? `title="${escapeHtml(session.workingDir)}"` : ''}>
           ${_tabIdx < 9 ? '<span class="tab-number">' + (_tabIdx + 1) + '</span>' : ''}
           ${loadState ? '<span class="tab-load-spinner" aria-hidden="true"></span>' : ''}
           <span class="tab-status ${status}" aria-hidden="true"></span>
@@ -2629,6 +2642,15 @@ class CodemanApp {
     };
 
     container.addEventListener('keydown', this._tabKeydownHandler);
+  }
+
+  handleSessionTabClick(event, sessionId) {
+    event?.preventDefault?.();
+    const preserveKeyboard = typeof KeyboardHandler !== 'undefined' && KeyboardHandler.keyboardVisible === true;
+    if (!preserveKeyboard && MobileDetection.isTouchDevice()) {
+      document.activeElement?.blur?.();
+    }
+    return this.selectSession(sessionId, { forceReload: true, preserveKeyboard });
   }
 
 
@@ -2901,6 +2923,13 @@ class CodemanApp {
     this.terminal.write('\x1b[3J\x1b[H\x1b[2J');
   }
 
+  _shouldFocusTerminalForTabSwitch() {
+    if (typeof MobileDetection === 'undefined' || !MobileDetection.isTouchDevice()) {
+      return true;
+    }
+    return typeof KeyboardHandler !== 'undefined' && KeyboardHandler.keyboardVisible;
+  }
+
   async selectSession(sessionId, options = {}) {
     // If this session is popped out into its own window, raise that window
     // instead of showing it inline (focus-on-click for detached tabs). If we
@@ -2925,7 +2954,13 @@ class CodemanApp {
     // programmatic focus() within the user-gesture call stack (e.g. tab click).
     // After the first await the gesture context is lost and focus() is silently
     // ignored, leaving the keyboard unable to send input to the terminal.
-    if (this.terminal) this.terminal.focus();
+    const shouldFocusTerminal =
+      options?.preserveKeyboard === true
+        ? this._shouldFocusTerminalForTabSwitch()
+        : options?.preserveKeyboard === false
+          ? false
+          : this._shouldFocusTerminalForTabSwitch();
+    if (shouldFocusTerminal && this.terminal) this.terminal.focus();
 
     const _selStart = performance.now();
     const _selName = this.sessions.get(sessionId)?.name || sessionId.slice(0,8);
@@ -3231,7 +3266,7 @@ class CodemanApp {
       this._connectWs(sessionId);
 
       _crashDiag.log('FOCUS');
-      this.terminal.focus();
+      if (shouldFocusTerminal && this.terminal) this.terminal.focus();
       this.scrollToLastNonEmptyLine();
       this._clearTerminalLoadState(sessionId, selectGen);
       _crashDiag.log(`SELECT_DONE: ${(performance.now() - _selStart).toFixed(0)}ms`);
