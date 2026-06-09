@@ -427,7 +427,7 @@ When someone authenticates via QR, the desktop shows a notification toast with t
 
 ## Security
 
-Codeman launches sessions with `--dangerously-skip-permissions`, so the web UI is by design a remote-code-execution surface for whoever can reach it — the whole security model exists to control *who* that is. Recent hardening (v0.9.0 + v0.9.5) closes the browser-driven attack paths that bite self-hosted dev tools. Full model: [`docs/security-architecture.md`](docs/security-architecture.md).
+Codeman launches sessions with `--dangerously-skip-permissions`, so the web UI is by design a remote-code-execution surface for whoever can reach it — the whole security model exists to control *who* that is. Recent hardening (v0.9.0 + v0.9.5) closes the browser-driven attack paths that bite self-hosted dev tools. Full model: [`docs/security-architecture.md`](docs/security-architecture.md). **Found a vulnerability?** See [`SECURITY.md`](SECURITY.md) for private disclosure and the list of known limitations.
 
 ### Network & access
 
@@ -650,6 +650,14 @@ npm install xterm-zerolag-input
 [Full documentation](packages/xterm-zerolag-input/README.md)
 
 ---
+
+## Versioning
+
+Codeman follows [SemVer](https://semver.org/). What the version number actually
+commits to — and what counts as internal (the HTTP/SSE API, on-disk state,
+experimental features) — is spelled out in
+[`docs/versioning-policy.md`](docs/versioning-policy.md). If you script against
+the HTTP API, pin to an exact version.
 
 ## License
 
