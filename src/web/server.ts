@@ -97,7 +97,13 @@ import {
   type ImageDetectedEvent,
   DEFAULT_NICE_CONFIG,
 } from '../types.js';
-import { CleanupManager, KeyedDebouncer, StaleExpirationMap, startEventLoopMonitor } from '../utils/index.js';
+import {
+  CleanupManager,
+  KeyedDebouncer,
+  StaleExpirationMap,
+  startEventLoopMonitor,
+  isSafePushEndpoint,
+} from '../utils/index.js';
 import type { EventLoopMonitorHandle } from '../utils/index.js';
 import { MAX_CONCURRENT_SESSIONS, MAX_SSE_CLIENTS } from '../config/map-limits.js';
 import { SseEvent } from './sse-events.js';
@@ -1638,6 +1644,14 @@ export class WebServer extends EventEmitter {
     for (const sub of subscriptions) {
       // Check per-subscription preferences
       if (sub.pushPreferences[event] === false) continue;
+
+      // Re-validate the stored endpoint before fetching it server-side (SSRF, M7).
+      // Defense-in-depth: subscribe-time validation already rejects unsafe URLs.
+      if (!isSafePushEndpoint(sub.endpoint)) {
+        console.warn('[push] skipping notification to unsafe endpoint:', sub.endpoint);
+        this.pushStore.removeByEndpoint(sub.endpoint);
+        continue;
+      }
 
       const pushSub = {
         endpoint: sub.endpoint,
