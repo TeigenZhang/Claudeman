@@ -606,7 +606,17 @@ Object.assign(CodemanApp.prototype, {
         return;
       }
       if (!terminal.has(data.phase)) {
-        this._setUpdateProgress(`↻ ${escapeHtml(this._updatePhaseText(data.phase))}`);
+        // Prefer the live status message — the updater's heartbeat enriches it with
+        // the latest npm/build output line so a slow step doesn't look frozen — and
+        // fall back to the static phase label. Append total elapsed so the counter
+        // keeps ticking between heartbeats: a clear "still working" signal.
+        const label = (data.message && data.message.trim()) ? data.message.trim() : this._updatePhaseText(data.phase);
+        let elapsed = '';
+        if (data.startedAt) {
+          const secs = Math.max(0, Math.round((Date.now() - data.startedAt) / 1000));
+          elapsed = ` <span style="color:var(--text-secondary)">· ${secs}s</span>`;
+        }
+        this._setUpdateProgress(`<span class="tunnel-spinner"></span> ${escapeHtml(label)}${elapsed}`);
         return;
       }
       this._stopUpdatePolling();

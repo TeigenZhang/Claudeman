@@ -93,6 +93,35 @@ write_status() {
   ' || echo "[self-update] WARN: status write failed ($phase)"
 }
 
+# Run a slow step with a heartbeat so the status file (and the UI polling it) keeps
+# moving instead of looking frozen during npm install / build. Every few seconds it
+# refreshes the status with the latest output line, and mirrors full output to the
+# log. Returns the wrapped command's exit code.
+run_step() {
+  local phase="$1" base="$2"; shift 2
+  local step_log; step_log="$(mktemp "${TMPDIR:-/tmp}/codeman-update.XXXXXX" 2>/dev/null || echo "/tmp/codeman-update.$$")"
+  write_status "$phase" "$base…"
+  echo "[self-update] $phase: $* (output below)"
+  "$@" >"$step_log" 2>&1 &
+  local pid=$! start=$SECONDS last_line=""
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep 3
+    local line
+    line="$(tr -d '\r' <"$step_log" 2>/dev/null | grep -aE '[^[:space:]]' | tail -n 1 | cut -c1-100)"
+    [[ -n "$line" && "$line" != "$last_line" ]] && last_line="$line"
+    if [[ -n "$last_line" ]]; then
+      write_status "$phase" "$base… · $last_line"
+    else
+      write_status "$phase" "$base… (working)"
+    fi
+  done
+  wait "$pid"; local rc=$?
+  echo "[self-update] $phase finished in $((SECONDS - start))s (rc=$rc)"
+  cat "$step_log" >>"$LOG" 2>/dev/null || true
+  rm -f "$step_log" 2>/dev/null || true
+  return $rc
+}
+
 fail() {
   local msg="$1" err="${2:-}"
   echo "[self-update] FAILED: $msg ($err)"
@@ -138,13 +167,12 @@ git fetch --tags --force origin "refs/tags/$TAG:refs/tags/$TAG" 2>/dev/null \
 write_status "checkout" "Checking out $TAG…"
 git -c advice.detachedHead=false checkout --force "$TAG" || rollback_and_fail "Could not check out $TAG"
 
-# 4) Install dependencies.
-write_status "installing" "Installing dependencies…"
-npm install --no-fund --no-audit || rollback_and_fail "Dependency install failed"
+# 4) Install dependencies (heartbeat keeps the UI live during this slow step).
+run_step "installing" "Installing dependencies" npm install --no-fund --no-audit \
+  || rollback_and_fail "Dependency install failed"
 
 # 5) Build (gate the restart on success — never restart into a torn dist/).
-write_status "building" "Building…"
-npm run build || rollback_and_fail "Build failed"
+run_step "building" "Building" npm run build || rollback_and_fail "Build failed"
 
 # 6) Restart the service so the new code loads. Write the terminal pre-restart
 #    marker FIRST so the freshly-booted server can reconcile it deterministically.
