@@ -1,5 +1,16 @@
 # Codeman Security Review — 2026-06-09
 
+> **⚠️ Remediation status (updated 2026‑06‑09):** the two CRITICALs and 5 of the 7
+> HIGHs below were **fixed the same day in commit `c669518` (shipped as 0.9.5)** —
+> an always‑on `Host`‑header + cross‑site `Origin` allowlist (`registerHostGuard`),
+> a raw `text/plain` body parser, a WebSocket `Origin`/`Host` check, and
+> HTML‑escaped subagent‑panel sinks. **The present‑tense "is exploitable" wording
+> below describes the pre‑fix v0.9.4 state.** Still open: **H2** (the self‑updater
+> trusts an unsigned git tag — needs signing infra) and dropping CSP
+> `'unsafe-inline'` (needs a nonce migration; H4's escaping already neutralises the
+> known XSS). Per‑finding breakdown in the *Implementation status* section below;
+> regression tests in `test/network-host-guard.test.ts`.
+
 **Scope:** whole codebase (branch `master`, v0.9.4). Adversarial multi-agent review: 10 dimension specialists → diverse-lens skeptic verification of every finding (HIGH/CRITICAL got 3 independent refutation passes) → completeness-critic sweep. 47 raw findings → **25 survived verification** (+1 from the critic). 22 were refuted (mostly "already inside the OS trust boundary" same-uid claims and doc-accuracy nits). Several exploits were **confirmed live** with `curl` against throwaway test ports.
 
 ## TL;DR — the one thing that matters

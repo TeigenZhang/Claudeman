@@ -187,11 +187,13 @@ Frontend JS modules have `@fileoverview` with `@dependency`/`@loadorder` tags. L
 |-------|---------|
 | **Auth** | Optional HTTP Basic via `CODEMAN_USERNAME` (defaults to `admin`) / `CODEMAN_PASSWORD` env vars. Active only when `CODEMAN_PASSWORD` is set (`middleware/auth.ts`) |
 | **Network bind** | Defaults to `127.0.0.1` (loopback). A non-loopback bind (`--host`/`CODEMAN_HOST`) without `CODEMAN_PASSWORD` **starts but warns loudly** (0.9.0; was fail-closed in COD-29/#107). `--allow-unauthenticated-network` / `CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK=1` acknowledges the warning. Classifier: `network-auth-policy.ts` |
+| **Host guard** | Always-on Host-header allowlist blocks DNS rebinding (RCE on the default no-auth loopback install). Allows loopback, any IP literal, the bind host, `*.ts.net`/`*.trycloudflare.com`/`*.cfargotunnel.com`, the active managed tunnel, and `CODEMAN_ALLOWED_HOSTS`. ⚠️ **Custom reverse-proxy domains are rejected** unless added via `CODEMAN_ALLOWED_HOSTS=host,.suffix`. `registerHostGuard` in `server.ts`; policy in `network-auth-policy.ts` (`buildHostPolicy`/`isAllowedRequestHost`/`isAllowedRequestOrigin`) |
+| **CSRF / Origin** | Always-on cross-site Origin guard rejects state-changing requests from foreign origins (covers self-update, session create/input, settings/tunnel toggles). **A missing Origin is allowed** so curl/CLI and Claude Code hooks keep working. The global body parser keeps `text/plain` RAW (no auto-JSON-parse, which had enabled simple-request CSRF); `/api/crash-diag` self-parses. WebSocket upgrade validates Origin+Host (anti-CSWSH) in `ws-routes.ts`. Added in `c669518` (closes 2026-06-09 review CRITICALs) |
 | **QR Auth** | Single-use 6-char tokens (60s TTL) for tunnel login. See `docs/qr-auth-plan.md` |
 | **Sessions** | 24h cookie (`codeman_session`), auto-extend, device context audit |
 | **Rate limit** | 10 failed auth/IP → 429 (15min decay). QR has separate limiter |
 | **Hook bypass** | `/api/hook-event` exempt from auth (localhost-only, schema-validated) |
-| **Env vars** | `CODEMAN_MUX` (managed session), `CODEMAN_API_URL` (auto-set for hooks) |
+| **Env vars** | `CODEMAN_MUX` (managed session), `CODEMAN_API_URL` (auto-set for hooks), `CODEMAN_ALLOWED_HOSTS` (extra Host/Origin allowlist entries for reverse proxies, comma-separated; bare `.suffix` matches subdomains) |
 | **Validation** | Zod schemas, path allowlist regex, `CLAUDE_CODE_*` env prefix allowlist |
 | **Headers** | CORS localhost-only, CSP, X-Frame-Options, HSTS if HTTPS |
 

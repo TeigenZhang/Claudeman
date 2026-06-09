@@ -177,8 +177,52 @@ requests as local:
 up (it does not gate the hook‑event exemption, but it gates everything else and
 is the documented practice). Prefer `tailscale serve` (below), which authenticates
 at the tailnet layer so untrusted clients never reach the loopback port at all.
-A future hardening could gate the hook‑event exemption on a shared secret while a
-tunnel is active.
+
+### Host‑header & Origin allowlist (DNS‑rebinding & CSRF defense)
+
+Since **0.9.5** an **always‑on** `onRequest` hook (`registerHostGuard`,
+`src/web/middleware/auth.ts`; policy in `src/web/network-auth-policy.ts`) runs
+**before** the auth pipeline in §2 and guards **every** request — including the
+localhost‑only exemptions above, SSE, the WebSocket upgrade, and static files. It
+closes the browser‑driven RCE path (DNS rebinding plus a cross‑site `text/plain`
+`POST`) that the loopback‑no‑password default otherwise exposed to any site the
+operator merely visits.
+
+- **Host allowlist (anti‑DNS‑rebinding).** The `Host` header is validated on
+  **every** request, all methods. A custom domain rebound to `127.0.0.1` is
+  rejected with `403 Forbidden: host not allowed` before any handler runs. Allowed:
+  `localhost`; **any** IP literal (IPv4/IPv6 — a browser hitting a numeric address
+  can't be a rebinding victim); the bind host; the suffixes `.ts.net`,
+  `.trycloudflare.com`, `.cfargotunnel.com`; the hostname of the active
+  Codeman‑managed tunnel; and anything in `CODEMAN_ALLOWED_HOSTS`. A missing/empty
+  `Host` is rejected.
+- **Origin / CSRF guard.** On **state‑changing** methods (everything except
+  `GET`/`HEAD`/`OPTIONS`) the `Origin` header must also pass the same allowlist,
+  else `403 Forbidden: cross‑site request blocked`. A **missing `Origin` is
+  allowed** (so `curl`, the CLI, and Claude Code hooks keep working); only a
+  present‑but‑foreign origin — or the opaque `null` origin (sandboxed iframe) — is
+  rejected. This blocks the cross‑site CSRF that could previously create sessions,
+  trigger self‑update, or flip `tunnelEnabled`.
+- **Raw `text/plain` bodies.** The global `text/plain` content‑type parser no
+  longer JSON‑parses bodies — it hands handlers the raw string (`/api/crash-diag`
+  self‑parses its beacon payload). This removes the CORS "simple request" CSRF
+  vector, where a cross‑site `fetch` with `Content-Type: text/plain` smuggled a
+  JSON body into a write route with no preflight — defense‑in‑depth alongside the
+  Origin guard.
+- **WebSocket upgrades.** The terminal WS upgrade (`src/web/routes/ws-routes.ts`)
+  runs the **same** Host + Origin check and closes with code `4003` on failure
+  (anti‑CSWSH).
+
+The policy is rebuilt per request from
+`buildHostPolicy(bindHost, tunnelManager.getUrl())`, so starting or stopping a
+tunnel at runtime updates the allowlist with no restart.
+
+> **Reverse‑proxy operators:** a custom proxy domain (e.g. `codeman.example.com`)
+> is **not** in the default allowlist and gets `403 host not allowed`. Add it via
+> `CODEMAN_ALLOWED_HOSTS` — comma‑separated, case‑insensitive; an exact hostname
+> matches only itself, while a leading‑dot entry (`.corp.internal`) matches the
+> bare domain **and** all subdomains. Behaviour is covered by
+> `test/network-host-guard.test.ts`.
 
 ---
 
@@ -342,6 +386,12 @@ production layout (`~/.codeman`, `-L codeman`, port 3000).
     (CDN fallback for a few libraries). `script-src` and `style-src` additionally
     allow `'unsafe-inline'` — relevant to the SVG/HTML handling in §5, where the
     `octet-stream` + `nosniff` download (not the CSP) is what blocks execution.
+    Because `'unsafe-inline'` is still present (removing it needs a nonce
+    migration), AI‑derived strings rendered into the subagent/activity panels are
+    HTML‑escaped at the injection sites (`escapeHtml` in
+    `src/web/public/constants.js`; sinks in `panels-ui.js` / `subagent-windows.js`)
+    so a hostile tool name or argument can't execute — defense‑in‑depth from the
+    2026‑06‑09 review (H4).
   - `connect-src` allows `wss://api.deepgram.com` (streaming voice input).
   - `img-src` allows `data:` and `blob:` (inline / generated images, QR codes).
   - `frame-ancestors 'self'`.
@@ -367,6 +417,7 @@ production layout (`~/.codeman`, `-L codeman`, port 3000).
 |------------|--------|
 | `CODEMAN_PASSWORD` (+ `CODEMAN_USERNAME`) | Enable HTTP Basic auth |
 | `--host` / `CODEMAN_HOST` | Bind host (default `127.0.0.1`) |
+| `CODEMAN_ALLOWED_HOSTS` | Extra `Host`/`Origin` allowlist entries for reverse proxies (comma‑separated; exact host, or leading‑dot `.suffix` for subdomains) — see §3 |
 | `--allow-unauthenticated-network` / `CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK` | Acknowledge an unauthenticated non‑loopback bind (downgrades the warning) |
 | `--https` | Enable TLS (adds HSTS) |
 | `CODEMAN_INSTANCE` | Scope tmux socket + data dir for isolation |
@@ -379,9 +430,9 @@ production layout (`~/.codeman`, `-L codeman`, port 3000).
 
 | Concern | File |
 |---------|------|
-| Bind‑host classification, env‑flag parsing | `src/web/network-auth-policy.ts` |
+| Bind‑host classification, env‑flag parsing, Host/Origin allowlist (`buildHostPolicy` / `isAllowedRequestHost` / `isAllowedRequestOrigin`) | `src/web/network-auth-policy.ts` |
 | Start‑and‑warn policy | `src/web/server.ts` (`WebServer.start()`) |
-| Auth pipeline, rate limiting, security headers, CORS | `src/web/middleware/auth.ts` |
+| Auth pipeline, rate limiting, security headers, CORS, Host/Origin guard (`registerHostGuard`) | `src/web/middleware/auth.ts` |
 | File‑path containment (realpath‑before‑check) | `src/web/route-helpers.ts` (`validateSessionFilePath`) |
 | File routes, caps, SVG handling, download blocklist | `src/web/routes/file-routes.ts` |
 | Instance/socket/data‑dir scoping | `src/config/instance.ts` |
