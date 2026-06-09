@@ -102,9 +102,9 @@ import type { EventLoopMonitorHandle } from '../utils/index.js';
 import { MAX_CONCURRENT_SESSIONS, MAX_SSE_CLIENTS } from '../config/map-limits.js';
 import { SseEvent } from './sse-events.js';
 import type { ScheduledRun } from './ports/index.js';
-import { registerAuthMiddleware, registerSecurityHeaders } from './middleware/auth.js';
+import { registerAuthMiddleware, registerSecurityHeaders, registerHostGuard } from './middleware/auth.js';
 import { installRouteErrorHandler } from './route-error-handler.js';
-import { isExplicitlyEnabled, isLoopbackBindHost } from './network-auth-policy.js';
+import { isExplicitlyEnabled, isLoopbackBindHost, buildHostPolicy, type HostPolicy } from './network-auth-policy.js';
 import {
   registerPushRoutes,
   registerTeamRoutes,
@@ -531,6 +531,14 @@ export class WebServer extends EventEmitter {
     };
   }
 
+  /**
+   * Current Host/Origin allowlist policy. Read per request so a tunnel started at
+   * runtime (PUT /api/settings) is reflected without a restart.
+   */
+  private getHostPolicy(): HostPolicy {
+    return buildHostPolicy(this.host, this.tunnelManager.getUrl());
+  }
+
   private async setupRoutes(): Promise<void> {
     // multipart/form-data: parser is provided by @fastify/multipart (registered
     // below). Its parser is a no-op marker that leaves the body on req.raw, so
@@ -546,6 +554,11 @@ export class WebServer extends EventEmitter {
 
     // Cookie plugin (needed for auth session tokens)
     await this.app.register(fastifyCookie);
+
+    // Anti-DNS-rebinding Host allowlist + cross-site (CSRF) Origin guard. Registered
+    // before auth so forged cross-site / rebound requests are rejected up front, even
+    // on the default no-password install. See docs/reports/security-review-2026-06-09.md.
+    registerHostGuard(this.app, () => this.getHostPolicy());
 
     // Auth middleware (Basic Auth + session cookies + rate limiting)
     const authState = registerAuthMiddleware(this.app, this.https);
@@ -698,24 +711,28 @@ export class WebServer extends EventEmitter {
     // parseBody. Shared with the route test harness so test behavior matches prod.
     installRouteErrorHandler(this.app);
 
-    // Crash diagnostics beacon — frontend POSTs breadcrumbs, GET to read them
+    // Crash diagnostics beacon — frontend POSTs breadcrumbs, GET to read them.
+    // text/plain is used ONLY by this beacon (navigator.sendBeacon sends text/plain).
+    // Keep the body as a RAW STRING and parse it inside the handler — a global
+    // text/plain -> JSON parser would let a cross-site "simple request" (no CORS
+    // preflight) submit JSON to any route. See security review C2.
     let _crashBreadcrumbs = '';
     this.app.addContentTypeParser('text/plain;charset=UTF-8', { parseAs: 'string' }, (_req, body, done) => {
-      try {
-        done(null, JSON.parse(body as string));
-      } catch {
-        done(null, { data: body });
-      }
+      done(null, body);
     });
     this.app.addContentTypeParser('text/plain', { parseAs: 'string' }, (_req, body, done) => {
-      try {
-        done(null, JSON.parse(body as string));
-      } catch {
-        done(null, { data: body });
-      }
+      done(null, body);
     });
     this.app.post('/api/crash-diag', (req, reply) => {
-      _crashBreadcrumbs = String((req.body as { data?: string })?.data || '');
+      const raw = typeof req.body === 'string' ? req.body : '';
+      let data = raw;
+      try {
+        const parsed = JSON.parse(raw) as { data?: unknown };
+        if (parsed && typeof parsed.data === 'string') data = parsed.data;
+      } catch {
+        /* not JSON — treat the raw beacon text as the breadcrumbs */
+      }
+      _crashBreadcrumbs = String(data || '');
       reply.code(204).send();
     });
     this.app.get('/api/crash-diag', (_req, reply) => {
@@ -738,7 +755,7 @@ export class WebServer extends EventEmitter {
     registerPlanRoutes(this.app, ctx);
     registerClipboardRoutes(this.app, ctx);
     registerOrchestratorRoutes(this.app, ctx);
-    registerWsRoutes(this.app, ctx);
+    registerWsRoutes(this.app, ctx, () => this.getHostPolicy());
   }
 
   /**
@@ -1698,6 +1715,15 @@ export class WebServer extends EventEmitter {
     const protocol = this.https ? 'https' : 'http';
     const displayHost = this.host === '0.0.0.0' ? 'localhost' : this.host;
     console.log(`Codeman web interface running at ${protocol}://${displayHost}:${this.port}`);
+
+    // Anti-DNS-rebinding Host allowlist is always on. Localhost, any bare IP, the
+    // bind host, *.ts.net / *.trycloudflare.com / *.cfargotunnel.com, and the active
+    // managed tunnel are accepted automatically; add any other domain you front this
+    // with (e.g. a custom reverse-proxy host) via CODEMAN_ALLOWED_HOSTS=host1,.suffix.
+    const extraAllowed = (process.env.CODEMAN_ALLOWED_HOSTS || '').trim();
+    if (extraAllowed) {
+      console.log(`   Host allowlist also accepts: ${extraAllowed}`);
+    }
 
     // Codeman binds loopback (127.0.0.1) by default, which is safe out of the box.
     // If the user opts into a non-loopback bind (e.g. --host 0.0.0.0) WITHOUT a

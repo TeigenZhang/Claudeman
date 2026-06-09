@@ -802,13 +802,13 @@ Object.assign(CodemanApp.prototype, {
       const time = new Date(a.timestamp).toLocaleTimeString('en-US', { hour12: false });
       if (a.type === 'tool') {
         const toolDetail = this.getToolDetailExpanded(a.tool, a.input, a.fullInput, a.toolUseId);
-        return `<div class="subagent-activity tool" data-tool-use-id="${a.toolUseId || ''}">
+        return `<div class="subagent-activity tool" data-tool-use-id="${escapeHtml(a.toolUseId || '')}">
           <span class="time">${time}</span>
           <span class="icon">${this.getToolIcon(a.tool)}</span>
-          <span class="name">${a.tool}</span>
-          <span class="detail">${toolDetail.primary}</span>
+          <span class="name">${escapeHtml(a.tool)}</span>
+          <span class="detail">${escapeHtml(toolDetail.primary)}</span>
           ${toolDetail.hasMore ? `<button class="tool-expand-btn" onclick="app.toggleToolParams('${escapeHtml(a.toolUseId)}')">▶</button>` : ''}
-          ${toolDetail.hasMore ? `<div class="tool-params-expanded" id="tool-params-${a.toolUseId}" style="display:none;"><pre>${escapeHtml(JSON.stringify(a.fullInput || a.input, null, 2))}</pre></div>` : ''}
+          ${toolDetail.hasMore ? `<div class="tool-params-expanded" id="tool-params-${escapeHtml(a.toolUseId)}" style="display:none;"><pre>${escapeHtml(JSON.stringify(a.fullInput || a.input, null, 2))}</pre></div>` : ''}
         </div>`;
       } else if (a.type === 'tool_result') {
         const icon = a.isError ? '❌' : '📄';
@@ -818,7 +818,7 @@ Object.assign(CodemanApp.prototype, {
         return `<div class="subagent-activity tool-result ${statusClass}">
           <span class="time">${time}</span>
           <span class="icon">${icon}</span>
-          <span class="name">${a.tool || 'result'}</span>
+          <span class="name">${escapeHtml(a.tool || 'result')}</span>
           <span class="detail">${escapeHtml(preview)}${sizeInfo}</span>
         </div>`;
       } else if (a.type === 'progress') {
@@ -830,7 +830,7 @@ Object.assign(CodemanApp.prototype, {
         return `<div class="subagent-activity progress${hookClass}">
           <span class="time">${time}</span>
           <span class="icon">${icon}</span>
-          <span class="detail">${displayText}</span>
+          <span class="detail">${escapeHtml(displayText)}</span>
         </div>`;
       } else if (a.type === 'message') {
         const preview = a.text.length > 100 ? a.text.substring(0, 100) + '...' : a.text;
@@ -1400,7 +1400,7 @@ Object.assign(CodemanApp.prototype, {
       return `<div class="activity-line">
         <span class="time">${time}</span>
         <span class="tool-icon">${this.getToolIcon(a.tool)}</span>
-        <span class="tool-name">${a.tool}</span>
+        <span class="tool-name">${escapeHtml(a.tool)}</span>
         <span class="tool-detail">${escapeHtml(this.getToolDetail(a.tool, a.input))}</span>
       </div>`;
     } else if (a.type === 'tool_result') {
@@ -1411,7 +1411,7 @@ Object.assign(CodemanApp.prototype, {
       return `<div class="activity-line result-line${statusClass}">
         <span class="time">${time}</span>
         <span class="tool-icon">${icon}</span>
-        <span class="tool-name">${a.tool || '→'}</span>
+        <span class="tool-name">${escapeHtml(a.tool || '→')}</span>
         <span class="tool-detail">${escapeHtml(preview)}${sizeInfo}</span>
       </div>`;
     } else if (a.type === 'progress') {
