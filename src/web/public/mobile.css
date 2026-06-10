@@ -94,30 +94,6 @@ html.mobile-init .file-browser-panel {
     gap: 0.25rem;
   }
 
-  .mobile-header-utility-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    margin: -4px 0.2rem -4px 0;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--text-muted);
-    order: -1;
-    position: relative;
-    z-index: 2;
-    flex-shrink: 0;
-  }
-
-  .mobile-header-utility-toggle.active,
-  .mobile-header-utility-toggle:active {
-    background: rgba(255, 255, 255, 0.08);
-    color: var(--text);
-  }
-
   .header-right {
     position: fixed;
     top: calc(52px + var(--safe-area-top));
@@ -472,25 +448,6 @@ html.mobile-init .file-browser-panel {
 
   .header-right.mobile-collapsed {
     display: none;
-  }
-
-  .mobile-header-utility-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    margin: -6px 0.15rem -6px 0;
-    background: transparent;
-    border: none;
-    border-radius: 5px;
-    color: var(--text-muted);
-    order: -1;
-    position: relative;
-    z-index: 2;
-    flex-shrink: 0;
-    border-left: none;
   }
 
   /* Smaller header buttons on mobile */

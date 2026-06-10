@@ -78,6 +78,7 @@ import {
   buildShellEnv,
 } from './session-cli-builder.js';
 import { SessionAutoOps } from './session-auto-ops.js';
+import { detectUsageLimitPause } from './usage-limit-patterns.js';
 import { SessionTaskCache } from './session-task-cache.js';
 
 export type { BackgroundTask } from './task-tracker.js';
@@ -520,6 +521,9 @@ export class Session extends EventEmitter {
       this._totalOutputTokens = 0;
       this.emit('autoClear', data);
     });
+    this._autoOps.on('limitPauseScheduled', (data) => this.emit('limitPauseScheduled', data));
+    this._autoOps.on('limitResume', (data) => this.emit('limitResume', data));
+    this._autoOps.on('limitResumeCancelled', (data) => this.emit('limitResumeCancelled', data));
   }
 
   get status(): SessionStatus {
@@ -825,6 +829,39 @@ export class Session extends EventEmitter {
     this._autoOps.setAutoCompact(enabled, threshold, prompt);
   }
 
+  get autoResumeEnabled(): boolean {
+    return this._autoOps.autoResumeEnabled;
+  }
+
+  /** When the scheduled usage-limit auto-resume fires (epoch ms), or null. */
+  get autoResumeAt(): number | null {
+    return this._autoOps.autoResumeAt;
+  }
+
+  /** True while the session is paused on a Claude usage limit (auto-resume armed). */
+  get isLimitPaused(): boolean {
+    return this._autoOps.isLimitPaused;
+  }
+
+  setAutoResume(enabled: boolean): void {
+    this._autoOps.setAutoResume(enabled);
+    // Users typically enable this WHILE a session already sits paused — the
+    // limit footer won't reprint on its own, so scan the recent buffer once.
+    // Only a future reset time counts: stale scrollback must not arm a resume.
+    if (enabled && !isExternalCliMode(this.mode)) {
+      const tail = this._terminalBuffer.value.slice(-8192).replace(ANSI_ESCAPE_PATTERN_FULL, '');
+      const detection = detectUsageLimitPause(tail);
+      if (detection && detection.resetAt > Date.now()) {
+        this._autoOps.processCleanData(tail);
+      }
+    }
+  }
+
+  /** Restore auto-resume state (and a pending schedule) after Codeman restart. */
+  restoreAutoResume(enabled: boolean, resumeAt?: number): void {
+    this._autoOps.restoreAutoResume(enabled, resumeAt);
+  }
+
   get imageWatcherEnabled(): boolean {
     return this._imageWatcherEnabled;
   }
@@ -869,6 +906,8 @@ export class Session extends EventEmitter {
       autoCompactEnabled: this._autoOps.autoCompactEnabled,
       autoCompactThreshold: this._autoOps.autoCompactThreshold,
       autoCompactPrompt: this._autoOps.autoCompactPrompt,
+      autoResumeEnabled: this._autoOps.autoResumeEnabled,
+      autoResumeAt: this._autoOps.autoResumeAt ?? undefined,
       imageWatcherEnabled: this._imageWatcherEnabled,
       totalCost: this._totalCost,
       inputTokens: this._totalInputTokens,
@@ -1250,6 +1289,7 @@ export class Session extends EventEmitter {
           this._isWorking = true;
           this._status = 'busy';
           this.emit('working');
+          this._autoOps.notifyWorking();
         }
         this._awaitingIdleConfirmation = false;
         if (this.activityTimeout) clearTimeout(this.activityTimeout);
@@ -1356,6 +1396,11 @@ export class Session extends EventEmitter {
       this._bashToolParser.processCleanData(getCleanData());
     }
 
+    // Usage-limit pause detection (auto-resume on usage limit)
+    if (this._autoOps.autoResumeEnabled) {
+      this._autoOps.processCleanData(getCleanData());
+    }
+
     // Parse token count from status line (e.g., "123.4k tokens" or "5234 tokens")
     if (rawData.includes('token')) {
       this.parseTokensFromStatusLine(getCleanData());
@@ -1384,6 +1429,7 @@ export class Session extends EventEmitter {
         this._isWorking = true;
         this._status = 'busy';
         this.emit('working');
+        this._autoOps.notifyWorking();
         this._awaitingIdleConfirmation = false;
         if (this.activityTimeout) clearTimeout(this.activityTimeout);
       }
@@ -1673,6 +1719,12 @@ export class Session extends EventEmitter {
     if (this.activityTimeout) {
       clearTimeout(this.activityTimeout);
       this.activityTimeout = null;
+    }
+
+    // Clear pending cross-device resize refresh
+    if (this._resizeRefreshTimer) {
+      clearTimeout(this._resizeRefreshTimer);
+      this._resizeRefreshTimer = null;
     }
 
     // Clear line buffer flush timer
@@ -2096,9 +2148,48 @@ export class Session extends EventEmitter {
    */
   private _desktopSizeClaims = new Set<symbol>();
 
+  /**
+   * A desktop sizing claim only blocks small-viewport resizes while the
+   * desktop is RECENTLY ACTIVE (claim registration or typed input within this
+   * window). An abandoned-but-connected desktop tab (left open at home, screen
+   * locked) must not hold a phone's view hostage: without this, the phone
+   * renders a desktop-width stream in a narrow xterm — mid-word wraps, tmux
+   * dot-fill, and Ink overdraw soup (the 0.9.8–0.9.12 mobile regression).
+   */
+  private static readonly DESKTOP_CLAIM_IDLE_MS = 90_000;
+
+  /** Last evidence of a live desktop user (claim registered / typed input). */
+  private _lastDesktopActivityAt = 0;
+
+  /** Last desktop-typed dimensions, for re-asserting after a mobile override. */
+  private _lastDesktopDims: { cols: number; rows: number } | null = null;
+
+  /** True while a small viewport reflowed the pane past an idle desktop claim. */
+  private _mobileSizeOverride = false;
+
+  /** Debounce for the post-takeover buffer refresh (see _scheduleResizeRefresh) */
+  private _resizeRefreshTimer: NodeJS.Timeout | null = null;
+
+  /**
+   * After a CROSS-DEVICE resize (phone takes the pane / desktop re-asserts),
+   * viewing clients still hold the old-width buffer: Ink's redraw lands below
+   * the stale frames, stacking ghost footers. Tell every client to reload the
+   * buffer once the post-SIGWINCH redraw has settled. Debounced so a takeover
+   * followed by an immediate re-assert produces a single refresh.
+   */
+  private _scheduleResizeRefresh(): void {
+    if (this._resizeRefreshTimer) clearTimeout(this._resizeRefreshTimer);
+    this._resizeRefreshTimer = setTimeout(() => {
+      this._resizeRefreshTimer = null;
+      if (this._isStopped) return;
+      this.emit('needsRefresh');
+    }, 700);
+  }
+
   /** Register a live desktop sizing claim (see _desktopSizeClaims). */
   claimDesktopSizing(token: symbol): void {
     this._desktopSizeClaims.add(token);
+    this._lastDesktopActivityAt = Date.now();
   }
 
   /** Release a desktop sizing claim when its connection goes away. */
@@ -2107,22 +2198,52 @@ export class Session extends EventEmitter {
   }
 
   /**
+   * Record desktop user activity (typed input over a claim-holding socket).
+   * If a phone reflowed the pane while the desktop was idle, the desktop
+   * layout is restored — "whoever is actively using the session wins".
+   */
+  noteDesktopActivity(): void {
+    this._lastDesktopActivityAt = Date.now();
+    if (this._mobileSizeOverride && this._lastDesktopDims) {
+      // resize()'s desktop branch clears _mobileSizeOverride — leaving it set
+      // here lets resize() recognize the re-assert and refresh the clients.
+      this.resize(this._lastDesktopDims.cols, this._lastDesktopDims.rows, { viewportType: 'desktop' });
+    }
+  }
+
+  /**
    * Resizes the PTY terminal dimensions.
    * Skips the resize if dimensions haven't changed to avoid triggering
    * unnecessary Ink full-screen redraws (visible flicker on tab switch).
    *
-   * Arbitration: while a desktop connection holds a sizing claim, resizes from
-   * small viewports (mobile/tablet) are ignored entirely — shrink AND grow
-   * would both reflow the desktop view. Without a desktop connected, small
-   * viewports control the PTY size freely.
+   * Arbitration: while a desktop connection holds a sizing claim AND has been
+   * active within DESKTOP_CLAIM_IDLE_MS, resizes from small viewports
+   * (mobile/tablet) are ignored — shrink AND grow would both reflow the
+   * desktop view. Once the desktop goes idle, a phone may take the pane (the
+   * desktop re-asserts its size on its next typed input via
+   * noteDesktopActivity). Without a desktop connected, small viewports
+   * control the PTY size freely.
    *
    * @param cols - Number of columns (width in characters)
    * @param rows - Number of rows (height in lines)
    */
   resize(cols: number, rows: number, options: { viewportType?: ResizeViewportType } = {}): void {
     const isSmallViewport = options.viewportType === 'mobile' || options.viewportType === 'tablet';
+    // Cross-device transitions (detected before the flags are updated below):
+    // a desktop resize arriving while a mobile override is active = re-assert.
+    const reasserting = options.viewportType === 'desktop' && this._mobileSizeOverride;
+    let tookOver = false;
+    if (options.viewportType === 'desktop') {
+      this._lastDesktopDims = { cols, rows };
+      this._lastDesktopActivityAt = Date.now();
+      this._mobileSizeOverride = false;
+    }
     if (isSmallViewport && this._desktopSizeClaims.size > 0) {
-      return;
+      if (Date.now() - this._lastDesktopActivityAt < Session.DESKTOP_CLAIM_IDLE_MS) {
+        return;
+      }
+      tookOver = !this._mobileSizeOverride;
+      this._mobileSizeOverride = true;
     }
     if (this.ptyProcess && (cols !== this._ptyCols || rows !== this._ptyRows)) {
       this._ptyCols = cols;
@@ -2131,6 +2252,11 @@ export class Session extends EventEmitter {
         this._mux.resizeWindow?.(this._muxSession.muxName, cols, rows);
       }
       this.ptyProcess.resize(cols, rows);
+      // Cross-device reflow: all clients reload the buffer so stale-width
+      // frames don't stack above the fresh Ink redraw (ghost footers).
+      if (tookOver || reasserting) {
+        this._scheduleResizeRefresh();
+      }
     }
   }
 

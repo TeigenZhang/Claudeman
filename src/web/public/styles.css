@@ -190,12 +190,6 @@ body {
   filter: brightness(1.1);
 }
 
-/* Mobile-only header utility toggle — hidden by default; the mobile/tablet
-   media queries in mobile.css (max-width: 768px) re-enable it as flex. */
-.mobile-header-utility-toggle {
-  display: none;
-}
-
 /* Session Tabs */
 .session-tabs {
   display: flex;
@@ -4674,6 +4668,39 @@ body.solo-mode .btn-lifecycle-log {
   flex-wrap: wrap;
   gap: 1rem;
   margin-bottom: 0.25rem;
+}
+
+/* Auto-resume on usage limit (token pause control) */
+.auto-resume-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0.75rem 0;
+  padding: 0.6rem 0.75rem;
+  background: rgba(59, 130, 246, 0.07);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 6px;
+}
+
+.auto-resume-box .checkbox-inline {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.auto-resume-box .form-hint {
+  margin-top: 0;
+}
+
+.auto-resume-status {
+  display: none;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--accent-hover);
+}
+
+.auto-resume-status.active {
+  display: block;
 }
 
 /* Respawn actions in modal */

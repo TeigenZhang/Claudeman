@@ -1993,6 +1993,12 @@ export class WebServer extends EventEmitter {
               if (savedState.autoClearEnabled !== undefined || savedState.autoClearThreshold !== undefined) {
                 session.setAutoClear(savedState.autoClearEnabled ?? false, savedState.autoClearThreshold);
               }
+              // Auto-resume on usage limit (re-arms a pending schedule; an
+              // overdue one fires shortly after boot — the limit footer won't
+              // reprint on its own, so the pause would otherwise stall)
+              if (savedState.autoResumeEnabled) {
+                session.restoreAutoResume(true, savedState.autoResumeAt);
+              }
               // Token tracking
               if (
                 savedState.inputTokens !== undefined ||

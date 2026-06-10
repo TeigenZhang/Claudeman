@@ -29,6 +29,7 @@ import {
   ResizeSchema,
   AutoClearSchema,
   AutoCompactSchema,
+  AutoResumeSchema,
   ImageWatcherSchema,
   FlickerFilterSchema,
   QuickRunSchema,
@@ -998,6 +999,27 @@ export function registerSessionRoutes(
           enabled: session.autoCompactEnabled,
           threshold: session.autoCompactThreshold,
           prompt: session.autoCompactPrompt,
+        },
+      },
+    };
+  });
+
+  // ========== Auto-Resume (usage-limit pause) ==========
+
+  app.post('/api/sessions/:id/auto-resume', async (req) => {
+    const { id } = req.params as { id: string };
+    const body = parseBody(AutoResumeSchema, req.body, 'Invalid request body');
+    const session = findSessionOrFail(ctx, id);
+
+    session.setAutoResume(body.enabled);
+    persistAndBroadcastSession(ctx, session);
+
+    return {
+      success: true,
+      data: {
+        autoResume: {
+          enabled: session.autoResumeEnabled,
+          resumeAt: session.autoResumeAt ?? undefined,
         },
       },
     };
