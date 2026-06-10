@@ -49,9 +49,9 @@ Object.assign(CodemanApp.prototype, {
       // Load settings to get lastUsedCase (reuse shared promise if provided)
       let lastUsedCase = null;
       try {
-        const settings = settingsPromise ? await settingsPromise : await fetch('/api/settings').then(r => r.ok ? r.json() : null);
-        if (settings && settings.data) {
-          lastUsedCase = settings.data.lastUsedCase || null;
+        const settings = settingsPromise ? await settingsPromise : await fetch('/api/settings').then(r => r.ok ? r.json() : null).then(env => env?.data ?? null);
+        if (settings) {
+          lastUsedCase = settings.lastUsedCase || null;
         }
       } catch {
         // Ignore settings load errors
