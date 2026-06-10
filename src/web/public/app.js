@@ -1838,6 +1838,11 @@ class CodemanApp {
       if (this._ws === ws) {
         this._wsReady = true;
         this._wsReconnectAttempts = 0;
+        // Send a typed resize over the fresh socket: syncs PTY dims after
+        // (re)connects AND registers the desktop sizing claim server-side —
+        // selectSession's earlier resizes ran before this WS existed, so they
+        // went over HTTP, which never claims (see ws-routes sizingToken).
+        this.sendResize(sessionId)?.catch?.(() => {});
       }
     };
 
@@ -2028,12 +2033,10 @@ class CodemanApp {
     if (!cjkEl) return;
     const settings = this.loadAppSettingsFromStorage();
     const defaults = this.getDefaultSettings?.() || {};
-    const isTouchTerminal =
-      typeof MobileDetection !== 'undefined' &&
-      MobileDetection.isTouchDevice() &&
-      (MobileDetection.isSmallScreen() || MobileDetection.isMediumScreen());
-    const showCjk =
-      this._serverCjkOverride || (!isTouchTerminal && (settings.cjkInputEnabled ?? defaults.cjkInputEnabled ?? false));
+    // Mobile defaults ship cjkInputEnabled: false (native terminal input by
+    // default on touch), but an explicit user enable is honored everywhere —
+    // the App Settings toggle must not be a silent no-op on phones.
+    const showCjk = this._serverCjkOverride || (settings.cjkInputEnabled ?? defaults.cjkInputEnabled ?? false);
     cjkEl.classList.toggle('cjk-input-visible', !!showCjk);
     document.body.classList.toggle('cjk-input-visible', !!showCjk);
     cjkEl.style.display = showCjk ? 'block' : 'none';
@@ -2646,11 +2649,14 @@ class CodemanApp {
 
   handleSessionTabClick(event, sessionId) {
     event?.preventDefault?.();
-    const preserveKeyboard = typeof KeyboardHandler !== 'undefined' && KeyboardHandler.keyboardVisible === true;
-    if (!preserveKeyboard && MobileDetection.isTouchDevice()) {
+    // On touch with the keyboard hidden, blur the tapped tab so switching
+    // sessions doesn't pop the on-screen keyboard. Focus policy itself lives
+    // in selectSession via _shouldFocusTerminalForTabSwitch().
+    const keyboardOpen = typeof KeyboardHandler !== 'undefined' && KeyboardHandler.keyboardVisible === true;
+    if (!keyboardOpen && MobileDetection.isTouchDevice()) {
       document.activeElement?.blur?.();
     }
-    return this.selectSession(sessionId, { forceReload: true, preserveKeyboard });
+    return this.selectSession(sessionId, { forceReload: true });
   }
 
 
@@ -2954,12 +2960,9 @@ class CodemanApp {
     // programmatic focus() within the user-gesture call stack (e.g. tab click).
     // After the first await the gesture context is lost and focus() is silently
     // ignored, leaving the keyboard unable to send input to the terminal.
-    const shouldFocusTerminal =
-      options?.preserveKeyboard === true
-        ? this._shouldFocusTerminalForTabSwitch()
-        : options?.preserveKeyboard === false
-          ? false
-          : this._shouldFocusTerminalForTabSwitch();
+    // Desktop always focuses; touch focuses only while the on-screen keyboard
+    // is already open (so a tab switch doesn't pop the keyboard).
+    const shouldFocusTerminal = this._shouldFocusTerminalForTabSwitch();
     if (shouldFocusTerminal && this.terminal) this.terminal.focus();
 
     const _selStart = performance.now();

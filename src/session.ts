@@ -2060,6 +2060,12 @@ export class Session extends EventEmitter {
    * registers them on a desktop-typed resize and releases them on socket
    * close, so a mobile-only session (no desktop connected) keeps full control
    * of its own size — including narrowing below the spawn default.
+   *
+   * Deliberate tradeoff: claims are WS-only because only a socket has a
+   * liveness signal. A desktop degraded to the stateless HTTP resize fallback
+   * still applies its typed resizes but holds no claim, so a concurrent phone
+   * can reflow it. This is cooperative UX arbitration, not a security
+   * boundary — untyped (legacy/API) resizes bypass claims by design.
    */
   private _desktopSizeClaims = new Set<symbol>();
 
@@ -2187,6 +2193,12 @@ export class Session extends EventEmitter {
     this._isStopped = true;
 
     this._clearAllTimers();
+
+    // Drop desktop sizing claims defensively. Sockets normally release their
+    // own claim on close, but a hung client's close event can lag the session
+    // teardown by up to a ping cycle — don't let a stale claim suppress
+    // mobile resizes if this Session object sees any further use.
+    this._desktopSizeClaims.clear();
 
     // Immediately cleanup Promise callbacks to prevent orphaned references
     // during the rest of stop() processing (e.g., if mux kill times out)
