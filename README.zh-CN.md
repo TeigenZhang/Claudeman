@@ -5,7 +5,7 @@
 <h2 align="center">AI 编程智能体的任务控制中心</h2>
 
 <p align="center">
-  <em>Claude Code &bull; OpenCode &bull; Codex —— 统一仪表盘 &bull; 零延迟移动输入 &bull; 任意设备</em>
+  <em>Claude Code &bull; OpenCode &bull; Codex —— 统一仪表盘 &bull; 任意设备</em>
 </p>
 
 <p align="center">
