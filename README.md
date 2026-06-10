@@ -5,7 +5,7 @@
 <h2 align="center">Mission control for AI coding agents</h2>
 
 <p align="center">
-  <em>Claude Code &bull; OpenCode &bull; Codex &mdash; One Dashboard &bull; Any Device</em>
+  <em>Claude Code &bull; OpenCode &bull; Codex &bull; Terminal - One Dashboard &bull; Any Device</em>
 </p>
 
 <p align="center">
