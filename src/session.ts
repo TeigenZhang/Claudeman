@@ -1721,12 +1721,6 @@ export class Session extends EventEmitter {
       this.activityTimeout = null;
     }
 
-    // Clear pending cross-device resize refresh
-    if (this._resizeRefreshTimer) {
-      clearTimeout(this._resizeRefreshTimer);
-      this._resizeRefreshTimer = null;
-    }
-
     // Clear line buffer flush timer
     if (this._lineBufferFlushTimer) {
       clearTimeout(this._lineBufferFlushTimer);
@@ -2167,25 +2161,6 @@ export class Session extends EventEmitter {
   /** True while a small viewport reflowed the pane past an idle desktop claim. */
   private _mobileSizeOverride = false;
 
-  /** Debounce for the post-takeover buffer refresh (see _scheduleResizeRefresh) */
-  private _resizeRefreshTimer: NodeJS.Timeout | null = null;
-
-  /**
-   * After a CROSS-DEVICE resize (phone takes the pane / desktop re-asserts),
-   * viewing clients still hold the old-width buffer: Ink's redraw lands below
-   * the stale frames, stacking ghost footers. Tell every client to reload the
-   * buffer once the post-SIGWINCH redraw has settled. Debounced so a takeover
-   * followed by an immediate re-assert produces a single refresh.
-   */
-  private _scheduleResizeRefresh(): void {
-    if (this._resizeRefreshTimer) clearTimeout(this._resizeRefreshTimer);
-    this._resizeRefreshTimer = setTimeout(() => {
-      this._resizeRefreshTimer = null;
-      if (this._isStopped) return;
-      this.emit('needsRefresh');
-    }, 700);
-  }
-
   /** Register a live desktop sizing claim (see _desktopSizeClaims). */
   claimDesktopSizing(token: symbol): void {
     this._desktopSizeClaims.add(token);
@@ -2205,8 +2180,7 @@ export class Session extends EventEmitter {
   noteDesktopActivity(): void {
     this._lastDesktopActivityAt = Date.now();
     if (this._mobileSizeOverride && this._lastDesktopDims) {
-      // resize()'s desktop branch clears _mobileSizeOverride — leaving it set
-      // here lets resize() recognize the re-assert and refresh the clients.
+      this._mobileSizeOverride = false;
       this.resize(this._lastDesktopDims.cols, this._lastDesktopDims.rows, { viewportType: 'desktop' });
     }
   }
@@ -2229,10 +2203,6 @@ export class Session extends EventEmitter {
    */
   resize(cols: number, rows: number, options: { viewportType?: ResizeViewportType } = {}): void {
     const isSmallViewport = options.viewportType === 'mobile' || options.viewportType === 'tablet';
-    // Cross-device transitions (detected before the flags are updated below):
-    // a desktop resize arriving while a mobile override is active = re-assert.
-    const reasserting = options.viewportType === 'desktop' && this._mobileSizeOverride;
-    let tookOver = false;
     if (options.viewportType === 'desktop') {
       this._lastDesktopDims = { cols, rows };
       this._lastDesktopActivityAt = Date.now();
@@ -2242,7 +2212,6 @@ export class Session extends EventEmitter {
       if (Date.now() - this._lastDesktopActivityAt < Session.DESKTOP_CLAIM_IDLE_MS) {
         return;
       }
-      tookOver = !this._mobileSizeOverride;
       this._mobileSizeOverride = true;
     }
     if (this.ptyProcess && (cols !== this._ptyCols || rows !== this._ptyRows)) {
@@ -2252,11 +2221,6 @@ export class Session extends EventEmitter {
         this._mux.resizeWindow?.(this._muxSession.muxName, cols, rows);
       }
       this.ptyProcess.resize(cols, rows);
-      // Cross-device reflow: all clients reload the buffer so stale-width
-      // frames don't stack above the fresh Ink redraw (ghost footers).
-      if (tookOver || reasserting) {
-        this._scheduleResizeRefresh();
-      }
     }
   }
 

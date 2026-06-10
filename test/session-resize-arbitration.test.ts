@@ -171,41 +171,5 @@ describe('Session resize arbitration', () => {
       session.noteDesktopActivity();
       expect(resize).not.toHaveBeenCalled();
     });
-
-    it('emits needsRefresh after a mobile takeover and after a desktop re-assert', () => {
-      vi.useFakeTimers();
-      const session = new Session({ workingDir: '/tmp', mode: 'shell' });
-      attachFakePty(session, 160, 48);
-      const refresh = vi.fn();
-      session.on('needsRefresh', refresh);
-
-      session.resize(208, 45, { viewportType: 'desktop' });
-      session.claimDesktopSizing(Symbol('desktop-conn'));
-      vi.advanceTimersByTime(800);
-      expect(refresh).not.toHaveBeenCalled(); // plain desktop resize: no refresh
-
-      vi.advanceTimersByTime(PAST_IDLE_MS);
-      session.resize(48, 28, { viewportType: 'mobile' }); // takeover
-      vi.advanceTimersByTime(800);
-      expect(refresh).toHaveBeenCalledTimes(1);
-
-      session.noteDesktopActivity(); // re-assert to 208x45
-      vi.advanceTimersByTime(800);
-      expect(refresh).toHaveBeenCalledTimes(2);
-    });
-
-    it('does not emit needsRefresh for ordinary single-device resizes', () => {
-      vi.useFakeTimers();
-      const session = new Session({ workingDir: '/tmp', mode: 'shell' });
-      attachFakePty(session, 160, 48);
-      const refresh = vi.fn();
-      session.on('needsRefresh', refresh);
-
-      session.resize(48, 28, { viewportType: 'mobile' }); // mobile-only, no claims
-      session.resize(208, 45, { viewportType: 'desktop' });
-      session.resize(100, 30); // untyped
-      vi.advanceTimersByTime(1000);
-      expect(refresh).not.toHaveBeenCalled();
-    });
   });
 });
