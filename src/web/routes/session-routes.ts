@@ -83,6 +83,12 @@ const LEADING_WHITESPACE_PATTERN = /^[\s\r\n]+/;
 const ALT_SCREEN_TOGGLE_PATTERN = /\x1b\[\?(?:47|1047|1049)[hl]/g;
 // eslint-disable-next-line no-control-regex
 const ERASE_SCROLLBACK_PATTERN = /\x1b\[3J/g;
+// Mouse-tracking enables (X10/button/any-event/UTF-8/SGR/alt-scroll) — once on,
+// xterm.js forwards wheel events to the app instead of scrolling the viewport.
+// Live streams are stripped at the source, but buffers persisted BEFORE that
+// strip existed can still carry them; strip on replay for parity.
+// eslint-disable-next-line no-control-regex
+const MOUSE_TRACKING_PATTERN = /\x1b\[\?(?:1000|1001|1002|1003|1005|1006|1007)[hl]/g;
 
 /**
  * Strip redundant Ink spinner/status-bar redraw frames from the terminal buffer.
@@ -941,7 +947,10 @@ export function registerSessionRoutes(
     // xterm.js obeys them by switching to its scrollback-less alt buffer and
     // wiping saved lines, so conversation history disappears on tab switch.
     if (session.mode === 'codex') {
-      strippedBuffer = strippedBuffer.replace(ALT_SCREEN_TOGGLE_PATTERN, '').replace(ERASE_SCROLLBACK_PATTERN, '');
+      strippedBuffer = strippedBuffer
+        .replace(ALT_SCREEN_TOGGLE_PATTERN, '')
+        .replace(ERASE_SCROLLBACK_PATTERN, '')
+        .replace(MOUSE_TRACKING_PATTERN, '');
     }
 
     if (tailBytes > 0 && strippedBuffer.length > tailBytes) {

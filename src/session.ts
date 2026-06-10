@@ -258,6 +258,9 @@ export class Session extends EventEmitter {
   private _messages: ClaudeMessage[] = [];
   private _lineBuffer: string = '';
   private _lineBufferFlushTimer: NodeJS.Timeout | null = null;
+  // Codex only: trailing partial CSI held back so sequences split across PTY
+  // chunks can't slip past the alt-screen/scrollback strip (see _handleTerminalOutput)
+  private _codexSeqCarry: string = '';
   private resolvePromise: ((value: { result: string; cost: number }) => void) | null = null;
   private rejectPromise: ((reason: Error) => void) | null = null;
   private _promptResolved: boolean = false; // Guard against race conditions in runPrompt
@@ -1069,6 +1072,21 @@ export class Session extends EventEmitter {
     // scrollback intact. Codex's cursor-positioned redraws overwrite only the
     // cells they actually target, so the non-erased rows keep their content.
     if (this.mode === 'codex') {
+      // Reassemble sequences split across PTY chunk boundaries first: a chunk
+      // ending mid-sequence ('\x1b[?104' now, '9h' next) would slip past the
+      // strip below and leave xterm stuck in the scrollback-less alt buffer
+      // until the next buffer replay. Hold back an incomplete digit-only CSI
+      // tail (≤7 chars — the longest strippable intro is '\x1b[?1049') and
+      // prepend it to the next chunk; complete sequences are never held.
+      data = this._codexSeqCarry + data;
+      this._codexSeqCarry = '';
+      // eslint-disable-next-line no-control-regex
+      const splitTail = data.match(/\x1b(?:\[\??[0-9]{0,4})?$/);
+      if (splitTail) {
+        this._codexSeqCarry = splitTail[0];
+        data = data.slice(0, -splitTail[0].length);
+        if (!data) return;
+      }
       data = data
         // eslint-disable-next-line no-control-regex
         .replace(/\x1b\[\?(?:47|1047|1049)[hl]/g, '')
@@ -1691,6 +1709,7 @@ export class Session extends EventEmitter {
     this._errorBuffer = '';
     this._messages = [];
     this._lineBuffer = '';
+    this._codexSeqCarry = '';
     this._lastActivityAt = Date.now();
   }
 
