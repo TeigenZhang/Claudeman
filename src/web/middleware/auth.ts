@@ -19,6 +19,7 @@ import {
   AUTH_FAILURE_MAX,
   AUTH_FAILURE_WINDOW_MS,
 } from '../../config/auth-config.js';
+import { getHookSecret, HOOK_SECRET_HEADER } from '../../config/hook-secret.js';
 
 // Auth session cookie name
 export const AUTH_COOKIE_NAME = 'codeman_session';
@@ -28,19 +29,32 @@ interface AuthState {
   authSessions: StaleExpirationMap<string, AuthSessionRecord> | null;
   authFailures: StaleExpirationMap<string, number> | null;
   qrAuthFailures: StaleExpirationMap<string, number> | null;
+  hookSecretFailures: StaleExpirationMap<string, number> | null;
 }
 
 /**
  * Register HTTP Basic Auth middleware with session cookies and rate limiting.
  * Only active when CODEMAN_PASSWORD is set.
  *
+ * @param getTunnelRunning - returns true while a managed tunnel is active. Used
+ *   to gate the `/api/hook-event` localhost bypass: when a tunnel is up, tunneled
+ *   internet traffic reaches the loopback origin with `req.ip === 127.0.0.1`, so
+ *   the bypass additionally requires the shared hook secret (COD-54). When no
+ *   tunnel is running (loopback-only, the normal case) the plain localhost bypass
+ *   is kept so already-deployed (pre-secret) hooks + the loop channel keep working.
+ *   Optional; defaults to "no tunnel" (unchanged behavior) when omitted.
  * @returns AuthState for lifecycle management (dispose on server stop)
  */
-export function registerAuthMiddleware(app: FastifyInstance, https: boolean): AuthState {
+export function registerAuthMiddleware(
+  app: FastifyInstance,
+  https: boolean,
+  getTunnelRunning: () => boolean = () => false
+): AuthState {
   const state: AuthState = {
     authSessions: null,
     authFailures: null,
     qrAuthFailures: null,
+    hookSecretFailures: null,
   };
 
   const authPassword = process.env.CODEMAN_PASSWORD;
@@ -67,24 +81,70 @@ export function registerAuthMiddleware(app: FastifyInstance, https: boolean): Au
     refreshOnGet: false,
   });
 
+  // Separate hook-secret failure counter (COD-54). MUST NOT share authFailures:
+  // legacy (pre-secret) hook configs fire constantly from 127.0.0.1, and counting
+  // their 401s against the shared bucket would 429 every cookie-less request from
+  // loopback — locking out the Basic-Auth login path (and, through a tunnel, every
+  // client, since tunneled traffic also arrives as 127.0.0.1).
+  state.hookSecretFailures = new StaleExpirationMap<string, number>({
+    ttlMs: AUTH_FAILURE_WINDOW_MS,
+    refreshOnGet: false,
+  });
+
   const authSessions = state.authSessions;
   const authFailures = state.authFailures;
+  const hookSecretFailures = state.hookSecretFailures;
 
-  function sendAuthRateLimit(reply: FastifyReply, clientIp: string): void {
-    const remainingMs = authFailures.getRemainingTtl(clientIp) ?? AUTH_FAILURE_WINDOW_MS;
+  function sendAuthRateLimit(
+    reply: FastifyReply,
+    clientIp: string,
+    failures: StaleExpirationMap<string, number> = authFailures
+  ): void {
+    const remainingMs = failures.getRemainingTtl(clientIp) ?? AUTH_FAILURE_WINDOW_MS;
     const retryAfterSeconds = Math.max(1, Math.ceil(remainingMs / 1000));
     reply.header('Retry-After', String(retryAfterSeconds));
     reply.code(429).send('Too Many Requests — try again later');
   }
 
   app.addHook('onRequest', (req, reply, done) => {
-    // Hook events come from local Claude Code hooks (curl from localhost) — no auth headers available.
-    // Safe: validated by HookEventSchema, only triggers broadcasts.
-    // Security: restrict bypass to localhost only — prevents forged hook events via tunnel/LAN.
+    // Hook events come from local Claude Code hooks (curl from localhost) — no
+    // Basic-Auth credentials available. Validated downstream by HookEventSchema.
+    //
+    // COD-54: the bare localhost bypass is unsafe while a tunnel is running, because
+    // `cloudflared --url http://127.0.0.1:port` proxies internet traffic INTO the
+    // loopback origin, so a tunneled request arrives with req.ip === 127.0.0.1 and
+    // would pass. So:
+    //   - tunnel running → bypass requires the shared hook secret (local hooks present
+    //     it via the X-Codeman-Hook-Secret header; internet traffic can't know it),
+    //   - tunnel not running (loopback-only, the normal case) → keep the plain
+    //     localhost bypass so already-deployed (pre-secret) hooks + the loop's own
+    //     credential-less hook channel keep working.
     if (req.url === '/api/hook-event' && req.method === 'POST') {
       const ip = req.ip;
-      if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') {
-        done();
+      const isLoopback = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+      if (isLoopback) {
+        if (!getTunnelRunning()) {
+          // Loopback-only: unchanged behavior.
+          done();
+          return;
+        }
+        // Tunnel up: require the shared secret (constant-time compare).
+        const presented = Buffer.from(req.headers[HOOK_SECRET_HEADER.toLowerCase()]?.toString() ?? '');
+        const expected = Buffer.from(getHookSecret());
+        if (presented.length === expected.length && timingSafeEqual(presented, expected)) {
+          done();
+          return;
+        }
+        // Wrong/absent secret while tunneled — rate-limit per IP in the DEDICATED
+        // hook bucket (never authFailures, which would lock out the login path).
+        const hookIp = req.ip;
+        const hookFailures = hookSecretFailures.get(hookIp) ?? 0;
+        if (hookFailures >= AUTH_FAILURE_MAX) {
+          sendAuthRateLimit(reply, hookIp, hookSecretFailures);
+          return;
+        }
+        hookSecretFailures.set(hookIp, hookFailures + 1);
+        reply.code(401).send('Unauthorized: hook secret required');
         return;
       }
       // Non-localhost hook requests fall through to normal auth
