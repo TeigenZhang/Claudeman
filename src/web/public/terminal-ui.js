@@ -839,7 +839,11 @@ Object.assign(CodemanApp.prototype, {
 
         // Pattern 1: Commands with file paths (tail -f, cat, head, grep pattern, etc.)
         // Handles: tail -f /path, grep pattern /path, cat -n /path
-        const cmdPattern = /(tail|cat|head|less|grep|watch|vim|nano)\s+(?:[^\s\/]*\s+)*(\/[^\s"'<>|;&\n\x00-\x1f]+)/g;
+        // ⚠ The arg group must stay linear-time: `(?:[^\s\/]*\s+)*` (empty-matchable
+        // token, unbounded) backtracks exponentially on lines with a trigger word
+        // followed by multi-space runs (e.g. wrapped heredoc/table output) — froze
+        // the whole tab on hover. Non-empty token + bounded reps is O(n).
+        const cmdPattern = /\b(tail|cat|head|less|grep|watch|vim|nano)\s+(?:[^\s\/]+\s+){0,4}(\/[^\s"'<>|;&\n\x00-\x1f]+)/g;
 
         // Pattern 2: Paths with common extensions
         const extPattern =

@@ -2,10 +2,10 @@
   <img src="docs/images/codeman-title.svg" alt="Codeman" height="60">
 </p>
 
-<h2 align="center">为 AI 编程智能体而生的「控制平面」</h2>
+<h2 align="center">AI 编程智能体的任务控制中心</h2>
 
 <p align="center">
-  <em>智能体可视化 &bull; 零延迟输入 &bull; 自主编排器 &bull; 重生控制器 &bull; 移动优先 UI &bull; 安全加固</em>
+  <em>Claude Code &bull; OpenCode &bull; Codex —— 统一仪表盘 &bull; 零延迟移动输入 &bull; 任意设备</em>
 </p>
 
 <p align="center">

@@ -205,7 +205,12 @@ export function registerSecurityHeaders(app: FastifyInstance, https: boolean): v
   const scriptSrc =
     "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net" + (gesture ? " 'wasm-unsafe-eval'" : '');
   const connectSrc = "connect-src 'self' wss://api.deepgram.com";
-  const workerSrc = gesture ? "; worker-src 'self' blob:" : '';
+  // blob: workers are needed unconditionally: terminal-ui's _safeYield tick
+  // worker (throttling escape) is created from a Blob URL. Without this, every
+  // page load logs a CSP violation and the worker leg of _safeYield is dead.
+  // Risk is minimal — only same-origin scripts (already governed by script-src)
+  // can construct blob workers.
+  const workerSrc = "; worker-src 'self' blob:";
   const csp =
     `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; ` +
     `img-src 'self' data: blob:; ${connectSrc}; font-src 'self' https://cdn.jsdelivr.net; frame-ancestors 'self'${workerSrc}`;

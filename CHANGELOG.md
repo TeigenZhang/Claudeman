@@ -1,5 +1,15 @@
 # aicodeman
 
+## 0.9.11
+
+### Patch Changes
+
+- Fix a terminal freeze on hover (catastrophic regex backtracking) and a CSP violation that disabled the terminal's anti-throttling worker.
+
+  **Tab-freezing hover bug**: the terminal link provider's `cmdPattern` (which turns `tail -f /path`-style text into clickable links) used an empty-matchable, unbounded arg group — `(?:[^\s\/]*\s+)*` — that backtracks exponentially on real Claude output, e.g. wrapped `git commit -m "$(cat <<'EOF'` heredoc lines or aligned table rows. Hovering the mouse over such a line hung the page's main thread for minutes ("page unresponsive"). The pattern now uses non-empty tokens with bounded repetition (linear time); all intended command+path link forms still match. New `test/link-provider-regex.test.ts` extracts the shipped patterns from source and pins linear-time behavior on the killer line shapes.
+
+  **Blob worker CSP fix**: `worker-src 'self' blob:` is now always present in the CSP (previously only with `CODEMAN_GESTURE=1`). The terminal's `_safeYield` anti-throttling tick worker is created from a Blob URL and was silently blocked on every install, logging a CSP violation on each page load and disabling the worker leg of the render-yield fallback chain.
+
 ## 0.9.10
 
 ### Patch Changes

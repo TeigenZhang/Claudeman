@@ -56,7 +56,7 @@ When user says "COM":
 
 CI runs `npm run check:lockfile` on every push/PR, so lockfile drift fails the build even if the `version-packages` script is bypassed.
 
-**Version**: 0.9.10 (must match `package.json`)
+**Version**: 0.9.11 (must match `package.json`)
 
 ## Project Overview
 
@@ -127,7 +127,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 | **Tasks** | `src/task.ts`, `src/task-queue.ts`, `src/task-tracker.ts` | |
 | **State** | `src/state-store.ts`, `src/run-summary.ts`, `src/session-lifecycle-log.ts` | |
 | **Infra** | `src/hooks-config.ts`, `src/push-store.ts`, `src/tunnel-manager.ts`, `src/image-watcher.ts`, `src/file-stream-manager.ts` | |
-| **Plan** | `src/plan-orchestrator.ts`, `src/prompts/*.ts`, `src/templates/claude-md.ts` | |
+| **Plan** | `src/plan-orchestrator.ts`, `src/prompts/*.ts`, `src/templates/` (`claude-md.ts` + `case-template.md`, the CLAUDE.md scaffold generated into new cases) | |
 | **Web** | `src/web/server.ts` ★, `src/web/sse-events.ts`, `src/web/routes/*.ts` (15 route modules + barrel; `session-routes.ts` ★), `src/web/route-helpers.ts`, `src/web/ports/*.ts`, `src/web/middleware/auth.ts`, `src/web/schemas.ts`, `src/web/self-update.ts` | |
 | **Frontend** | `src/web/public/app.js` (~3.6K lines, core) + 5 infra modules (`constants.js`, `mobile-handlers.js`, `voice-input.js`, `notification-manager.js`, `keyboard-accessory.js`) + 7 domain modules (`terminal-ui.js`, `respawn-ui.js`, `ralph-panel.js`, `orchestrator-panel.js`, `settings-ui.js`, `panels-ui.js`, `session-ui.js`) + 5 feature modules (`ralph-wizard.js`, `api-client.js`, `subagent-windows.js`, `input-cjk.js`, `image-input.js`) + `sw.js` | |
 | **Types** | `src/types/index.ts` (barrel) → 15 domain files; also `src/types.ts` root re-export | See `@fileoverview` in index.ts |
@@ -157,7 +157,7 @@ Codeman is a Claude Code session manager with web interface and autonomous Ralph
 
 **External CLI modes (OpenCode, Codex)**: `isExternalCliMode()` in `session.ts` gates Claude-specific behavior — Ralph tracker, BashToolParser, token/CLI-info parsing, and ❯-prompt readiness detection are all skipped (these CLIs render their own TUIs; readiness = output stabilization instead). Both modes **require tmux — no direct PTY fallback** — because secrets are injected via `tmux setenv`, never on the spawn command line: OpenCode gets `OPENCODE_CONFIG_CONTENT` etc., Codex gets `OPENAI_API_KEY`/`CODEX_API_KEY`/`CODEX_HOME` (`setCodexEnvVars` in `tmux-manager.ts`). Codex specifics: command built by `buildCodexCommand()` (`--model`, `resume <id>`, `--dangerously-bypass-approvals-and-sandbox` from the `codexConfig` payload / `codexDangerouslyBypassApprovals` app setting; `renderMode` is schema-coerced to `'hybrid'`, the only supported mode); tmux exports `COLORTERM=truecolor` + unsets `NO_COLOR` (other modes unset `COLORTERM`); availability via `GET /api/codex/status` — session/quick-start routes fail with `OPERATION_FAILED` and an install hint (`npm install -g @openai/codex`) when the binary is missing. Frontend: run-mode dropdown → `runCodex()` in `session-ui.js` ("Run CX" label), App Settings → Codex CLI tab; Respawn/Ralph options are Claude-only, so session options open on the Summary tab for external CLI sessions. Tests: `test/run-mode-ui.test.ts` (vm-sandbox harness, no real DOM).
 
-**Hook events**: Claude Code hooks trigger via `/api/hook-event`. Key events: `permission_prompt`, `elicitation_dialog`, `idle_prompt`, `stop`, `teammate_idle`, `task_completed`. See `src/hooks-config.ts`.
+**Hook events**: Claude Code hooks trigger via `/api/hook-event`. Key events: `permission_prompt`, `elicitation_dialog`, `idle_prompt`, `stop`, `teammate_idle`, `task_completed`. See `src/hooks-config.ts`; upstream hook semantics mirrored in `docs/claude-code-hooks-reference.md`.
 
 **Agent Teams**: `TeamWatcher` polls `~/.claude/teams/`, matches to sessions via `leadSessionId`. Teammates are in-process threads appearing as subagents. Enable: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. See `docs/agent-teams/`.
 
@@ -211,7 +211,7 @@ Frontend JS modules have `@fileoverview` with `@dependency`/`@loadorder` tags. L
 
 ~135 handlers across 15 route files in `src/web/routes/`: system (41, incl. self-update `check`/`status`/`POST /api/system/update`, `POST /api/system/span-displays` → spawns `scripts/span-codeman.sh`, and `GET /api/codex/status`), sessions (28), orchestrator (10), cases (9), ralph (9), plan (8), respawn (7), files (6), mux (5), push (4), scheduled (4), teams (2), hooks (1), clipboard (1), ws (1 WebSocket). Each file has `@fileoverview` with endpoint details.
 
-**HTTP contract** (stable since 0.9.x, see `docs/versioning-policy.md`): responses use the `ApiResponse<T>` envelope — `{ success: true, data? }` or `{ success: false, error, errorCode }` (`src/types/api.ts`). `/api/v1/*` is a versioned alias of `/api/*` (URL rewrite in `server.ts`).
+**HTTP contract** (stable since 0.9.x, see `docs/versioning-policy.md`; full envelope/status/error-code/SSE spec in `docs/api-reference.md`): responses use the `ApiResponse<T>` envelope — `{ success: true, data? }` or `{ success: false, error, errorCode }` (`src/types/api.ts`). `/api/v1/*` is a versioned alias of `/api/*` (URL rewrite in `server.ts`).
 
 ## Adding Features
 
@@ -249,7 +249,7 @@ Raw `npx vitest` skips `config/vitest.config.ts`; always use `npm test --` or pa
 
 **Ports**: Pick unique ports manually. Search `const PORT =` before adding new tests.
 
-**Respawn tests**: Use `MockSession` from `test/respawn-test-utils.ts`. **Route tests**: `app.inject({ method, url, payload })` in `test/routes/` — no live port needed. **Mobile tests**: Playwright suite in `test/mobile/` (135 device profiles).
+**Respawn tests**: Use `MockSession` from `test/respawn-test-utils.ts`. **Route tests**: `app.inject({ method, url, payload })` in `test/routes/` — no live port needed. **Mobile tests**: Playwright suite in `test/mobile/` (135 device profiles). Browser-testing infra and practices: `docs/browser-testing-guide.md`.
 
 ## Debugging
 

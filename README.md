@@ -2,10 +2,10 @@
   <img src="docs/images/codeman-title.svg" alt="Codeman" height="60">
 </p>
 
-<h2 align="center">The missing control plane for AI coding agents</h2>
+<h2 align="center">Mission control for AI coding agents</h2>
 
 <p align="center">
-  <em>Agent Visualization &bull; Zero-Lag Input &bull; Mobile-First UI &bull; Hardened Security</em>
+  <em>Claude Code &bull; OpenCode &bull; Codex &mdash; One Dashboard &bull; Zero-Lag Mobile Input &bull; Any Device</em>
 </p>
 
 <p align="center">
