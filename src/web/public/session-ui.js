@@ -354,8 +354,10 @@ Object.assign(CodemanApp.prototype, {
       const envOverrides = this.buildEnvOverrides(caseSettings, globalSettings);
       const hasEnvOverrides = Object.keys(envOverrides).length > 0;
       const effort = this.getEffortSetting(globalSettings);
+      // Explicit Claude Model choice (App Settings) wins over the legacy 1M Opus
+      // toggles; both flow as `modelOverride` → the case's .claude/settings.local.json
       const useOpus1m = caseSettings.opusContext1m || globalSettings.opusContext1mEnabled;
-      const modelOverride = useOpus1m ? 'opus[1m]' : '';
+      const modelOverride = globalSettings.claudeModel || (useOpus1m ? 'opus[1m]' : '');
 
       // Step 1: Create all sessions in parallel
       this.terminal.writeln(`\x1b[90m Creating ${tabCount} session(s)...\x1b[0m`);

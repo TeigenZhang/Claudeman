@@ -305,6 +305,8 @@ export const SettingsUpdateSchema = z
     tunnelEnabled: z.boolean().optional(),
     tabTwoRows: z.boolean().optional(),
     agentTeamsEnabled: z.boolean().optional(),
+    /** Model for new Claude sessions (e.g. "claude-fable-5[1m]", "opus[1m]"); takes precedence over opusContext1mEnabled */
+    claudeModel: z.string().max(50).optional(),
     opusContext1mEnabled: z.boolean().optional(),
     thinkingEffort: z.string().max(20).optional(),
     // UI visibility

@@ -1148,13 +1148,26 @@
               </label>
               <span class="form-hint">Enable experimental Agent Teams for all new Claude sessions (disabled by default)</span>
             </div>
+            <div class="form-row">
+              <label>Claude Model</label>
+              <select id="appSettingsClaudeModel" class="form-select">
+                <option value="">Default (CLI setting)</option>
+                <option value="claude-fable-5[1m]">Fable 5 (1M context)</option>
+                <option value="claude-fable-5">Fable 5</option>
+                <option value="opus[1m]">Opus (1M context)</option>
+                <option value="opus">Opus</option>
+                <option value="sonnet">Sonnet</option>
+                <option value="haiku">Haiku</option>
+              </select>
+              <span class="form-hint">Model for new Claude sessions (pinned via the case's .claude/settings.local.json) — takes precedence over the 1M Opus toggle below</span>
+            </div>
             <div class="form-row form-row-switch">
               <label>1M Opus Context</label>
               <label class="switch">
                 <input type="checkbox" id="appSettingsOpusContext1m">
                 <span class="slider"></span>
               </label>
-              <span class="form-hint">Use 1M token context window (model: opus[1m]) for all new sessions</span>
+              <span class="form-hint">Use 1M token context window (model: opus[1m]) for all new sessions — ignored when a Claude Model is selected above</span>
             </div>
             <div class="form-row">
               <label>Thinking Effort</label>
@@ -1203,6 +1216,7 @@
               <label>Default Model</label>
               <select id="appSettingsDefaultModel" class="form-select">
                 <option value="">Default (CLI default)</option>
+                <option value="claude-fable-5">Fable 5 (Most powerful)</option>
                 <option value="opus">Opus (Most capable)</option>
                 <option value="sonnet">Sonnet (Balanced)</option>
                 <option value="haiku">Haiku (Fast & cheap)</option>
@@ -1226,6 +1240,7 @@
                 <option value="haiku">Haiku</option>
                 <option value="sonnet">Sonnet</option>
                 <option value="opus">Opus</option>
+                <option value="claude-fable-5">Fable 5</option>
               </select>
               <span class="form-hint">Quick searches, codebase exploration</span>
             </div>
@@ -1236,6 +1251,7 @@
                 <option value="haiku">Haiku</option>
                 <option value="sonnet">Sonnet</option>
                 <option value="opus">Opus</option>
+                <option value="claude-fable-5">Fable 5</option>
               </select>
               <span class="form-hint">Code writing, feature implementation</span>
             </div>
@@ -1246,6 +1262,7 @@
                 <option value="haiku">Haiku</option>
                 <option value="sonnet">Sonnet</option>
                 <option value="opus">Opus</option>
+                <option value="claude-fable-5">Fable 5</option>
               </select>
               <span class="form-hint">Writing and running tests</span>
             </div>
@@ -1256,6 +1273,7 @@
                 <option value="haiku">Haiku</option>
                 <option value="sonnet">Sonnet</option>
                 <option value="opus">Opus</option>
+                <option value="claude-fable-5">Fable 5</option>
               </select>
               <span class="form-hint">Code review, quality checks</span>
             </div>
