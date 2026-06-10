@@ -6,6 +6,16 @@ export function isExplicitlyEnabled(value: string | undefined): boolean {
   return value !== undefined && EXPLICIT_TRUE_VALUES.has(value.trim().toLowerCase());
 }
 
+/**
+ * True when unauthenticated network exposure is acceptable: either a password is
+ * set (auth active) or the operator explicitly acknowledged it. Used by the
+ * tunnel-enable guard (COD-55) to refuse publishing an unauthenticated public URL.
+ */
+export function isUnauthenticatedNetworkAcknowledged(allowFlag = false): boolean {
+  if (process.env.CODEMAN_PASSWORD) return true;
+  return allowFlag || isExplicitlyEnabled(process.env.CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK);
+}
+
 export function isLoopbackBindHost(host: string): boolean {
   const normalized = host
     .trim()

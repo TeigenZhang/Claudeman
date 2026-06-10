@@ -14,6 +14,7 @@ import { execSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { dataPath } from '../../config/instance.js';
 import { ApiErrorCode, createErrorResponse, getErrorMessage, type NiceConfig } from '../../types.js';
+import { isUnauthenticatedNetworkAcknowledged } from '../network-auth-policy.js';
 import {
   ConfigUpdateSchema,
   SettingsUpdateSchema,
@@ -497,6 +498,26 @@ export function registerSystemRoutes(
 
   app.put('/api/settings', async (req) => {
     const settings = parseBody(SettingsUpdateSchema, req.body, 'Invalid settings') as Record<string, unknown>;
+
+    // COD-55: enabling the Cloudflare tunnel publishes the whole app (full terminal
+    // control = effectively RCE) to a public *.trycloudflare.com URL. Because the
+    // tunnel binds to loopback, server.ts's non-loopback bind guard never trips, and
+    // with no CODEMAN_PASSWORD the auth middleware is inactive — so the tunnel URL is
+    // unauthenticated. Refuse to start a tunnel unless auth is configured OR the
+    // operator has acknowledged unauthenticated-network exposure. A public tunnel is
+    // higher-stakes than a LAN bind, so this is REFUSE (vs the bind guard's warn).
+    // Guard runs BEFORE persisting so a refused tunnelEnabled:true is not saved.
+    if (settings.tunnelEnabled === true && !ctx.tunnelManager.isRunning() && !isUnauthenticatedNetworkAcknowledged()) {
+      const msg =
+        'Refusing to start the Cloudflare tunnel without authentication: it would publish ' +
+        'full terminal control to a public URL with no password. Set CODEMAN_PASSWORD to ' +
+        'require login, or set CODEMAN_ALLOW_UNAUTHENTICATED_NETWORK=1 to acknowledge an ' +
+        'unauthenticated public tunnel.';
+      throw Object.assign(new Error(msg), {
+        statusCode: 403,
+        body: createErrorResponse(ApiErrorCode.OPERATION_FAILED, msg),
+      });
+    }
 
     try {
       const dir = dirname(SETTINGS_PATH);
