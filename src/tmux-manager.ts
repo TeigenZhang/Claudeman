@@ -2137,16 +2137,19 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       return false;
     }
 
-    try {
-      execSync(`${this.tmux()} resize-window -t ${shellescape(muxName)} -x ${cols} -y ${rows}`, {
-        timeout: EXEC_TIMEOUT_MS,
-        stdio: 'ignore',
-      });
-      return true;
-    } catch (err) {
-      console.error('[TmuxManager] Failed to resize tmux window:', err);
-      return false;
-    }
+    // Fire-and-forget: this runs on the interactive resize path (WS {t:'z'} and
+    // HTTP /resize), so use a non-blocking exec — a slow/hung tmux must not stall
+    // the Fastify event loop while other sessions' input/SSE are served. The sole
+    // caller (Session.resize) ignores the result, and under `window-size manual`
+    // the subsequent ptyProcess.resize is subordinate to this authoritative size.
+    exec(
+      `${this.tmux()} resize-window -t ${shellescape(muxName)} -x ${cols} -y ${rows}`,
+      { timeout: EXEC_TIMEOUT_MS },
+      (err) => {
+        if (err) console.error('[TmuxManager] Failed to resize tmux window:', err);
+      }
+    );
+    return true;
   }
 
   isAvailable(): boolean {

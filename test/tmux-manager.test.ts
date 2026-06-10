@@ -9,7 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TmuxManager, formatPaneSnapshot, parsePaneList, resolveActivePaneTarget } from '../src/tmux-manager.js';
-import { execSync } from 'node:child_process';
+import { execSync, exec } from 'node:child_process';
 
 // ============================================================================
 // Unit Tests (mocked)
@@ -64,6 +64,7 @@ vi.mock('node:fs/promises', async () => {
 describe('TmuxManager (unit)', () => {
   let manager: TmuxManager;
   const mockedExecSync = vi.mocked(execSync);
+  const mockedExec = vi.mocked(exec);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -131,9 +132,11 @@ describe('TmuxManager (unit)', () => {
     it('resizes the tmux window when Codeman accepts a desktop resize', () => {
       expect(manager.resizeWindow('codeman-abc12345', 140, 42)).toBe(true);
 
-      expect(mockedExecSync).toHaveBeenCalledWith(
+      // Non-blocking exec (not execSync) on the interactive resize hot path.
+      expect(mockedExec).toHaveBeenCalledWith(
         "tmux -L 'codeman' resize-window -t 'codeman-abc12345' -x 140 -y 42",
-        expect.objectContaining({ stdio: 'ignore' })
+        expect.objectContaining({ timeout: expect.any(Number) }),
+        expect.any(Function)
       );
     });
   });

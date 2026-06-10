@@ -702,6 +702,22 @@ class CodemanApp {
     this._webglLongTaskObserver = null;
   }
 
+  /**
+   * Repaint the full terminal viewport after a renderer swap (WebGL → canvas/DOM).
+   * Scheduled on the next frame so it lands after the addon teardown settles, and
+   * debounced so the context-loss and long-task fallback paths can't double-fire.
+   * No-ops safely if the terminal isn't ready.
+   */
+  _scheduleTerminalRepaint() {
+    if (this._terminalRepaintScheduled) return;
+    this._terminalRepaintScheduled = true;
+    const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb) => setTimeout(cb, 0);
+    raf(() => {
+      this._terminalRepaintScheduled = false;
+      try { this.terminal?.refresh(0, this.terminal.rows - 1); } catch {}
+    });
+  }
+
   _disableWebGLSticky(reason) {
     try {
       localStorage.setItem('codeman-webgl-disabled', JSON.stringify({ reason, at: Date.now() }));
@@ -3008,7 +3024,7 @@ class CodemanApp {
       // a small region with empty rows below the status bar.
       // sendResize is a no-op on the server when dims haven't changed, so
       // calling it every tab switch is cheap.
-      await this.sendResize(sessionId, { forceHttp: true }).catch(() => {});
+      const dimsChanged = await this.sendResize(sessionId, { forceHttp: true }).catch(() => false);
       if (this._isStaleSelect(selectGen)) {
         this._clearTerminalLoadState(sessionId, selectGen);
         return;
@@ -3027,7 +3043,10 @@ class CodemanApp {
         this._setTerminalLoadState(sessionId, selectGen, 'replaying');
         this._resetTerminalForReplay();
         await this.chunkedTerminalWrite(cachedBuffer, TERMINAL_CHUNK_SIZE, bufferLoadOwner);
-        if (this._isStaleSelect(selectGen)) return;
+        if (this._isStaleSelect(selectGen)) {
+          this._clearTerminalLoadState(sessionId, selectGen);
+          return;
+        }
         this.terminal.scrollToBottom();
         _crashDiag.log('CACHE_DONE');
       } else if (sessionIsBusy) {
@@ -3037,11 +3056,12 @@ class CodemanApp {
       }
 
       // Give TUI sessions a short chance to redraw after resize before the
-      // fresh buffer fetch captures the live mux pane. Shell sessions and
-      // snapshot restores do not need this delay, so terminal content can
-      // appear immediately when switching between shells.
-      if (session?.mode !== 'shell') {
-        await new Promise((resolve) => setTimeout(resolve, 400));
+      // fresh buffer fetch. Only needed when the resize actually changed
+      // dimensions (a real SIGWINCH → Ink redraw); a same-size tab switch sent
+      // no resize, so waiting would just add latency. Shell sessions never need
+      // it, so terminal content can appear immediately when switching shells.
+      if (session?.mode !== 'shell' && dimsChanged) {
+        await new Promise((resolve) => setTimeout(resolve, TUI_REDRAW_SETTLE_MS));
         if (this._isStaleSelect(selectGen)) {
           this._clearTerminalLoadState(sessionId, selectGen);
           return;
@@ -3075,7 +3095,10 @@ class CodemanApp {
           }
           // Use chunked write for large buffers to avoid UI jank
           await this.chunkedTerminalWrite(data.terminalBuffer, TERMINAL_CHUNK_SIZE, bufferLoadOwner);
-          if (this._isStaleSelect(selectGen)) return;
+          if (this._isStaleSelect(selectGen)) {
+            this._clearTerminalLoadState(sessionId, selectGen);
+            return;
+          }
           // Ensure terminal is scrolled to bottom after buffer load
           this.terminal.scrollToBottom();
         }
