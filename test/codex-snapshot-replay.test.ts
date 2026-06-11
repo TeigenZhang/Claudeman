@@ -17,8 +17,10 @@ describe('xterm snapshot/replay (codex tab-switch)', () => {
     const restoreBlock = source.slice(save, restore);
 
     expect(helper).toBeGreaterThan(-1);
-    // The save is gated on a usability check…
-    expect(source.slice(save - 250, save)).toContain('this._isUsableXtermSnapshot(snapshot)');
+    // The save is gated on a usability check immediately above it.
+    const usabilityGate = source.lastIndexOf('if (this._isUsableXtermSnapshot(snapshot))', save);
+    expect(usabilityGate).toBeGreaterThan(-1);
+    expect(usabilityGate).toBeLessThan(save);
     // …and so is each restore path (in-memory + persisted).
     expect(restoreBlock).toContain('if (snapshot && !this._isUsableXtermSnapshot(snapshot))');
     expect(restoreBlock).toContain('persisted && this._isUsableXtermSnapshot(persisted)');
